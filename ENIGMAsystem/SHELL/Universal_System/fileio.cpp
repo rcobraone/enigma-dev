@@ -162,6 +162,8 @@ bool file_text_eof(int fileid) { // Returns whether we reached the end of the fi
 
 void load_info(const std::string& fname) {
 	int file = file_text_open_read(fname);
+	if (file < 0)
+     return;
 	enigma::gameInfoText = file_text_read_all(file);
 	file_text_close(file);
 }
@@ -192,9 +194,18 @@ void file_bin_close(int fileid) {
 
 // Returns the size (in bytes) of the file with the given file id.
 size_t file_bin_size(int fileid) {
-  size_t currPos = enigma::files.get(fileid).fs.tellg();
+  const std::streampos currPos = enigma::files.get(fileid).fs.tellg();
+  if (currPos < 0)
+    return 0;
   enigma::files.get(fileid).fs.seekg(0, enigma::files.get(fileid).fs.end);
-  size_t length = enigma::files.get(fileid).fs.tellg();
+  const std::streampos endPos = enigma::files.get(fileid).fs.tellg();
+  if (endPos < 0) {
+    enigma::files.get(fileid).fs.clear();
+    enigma::files.get(fileid).fs.seekg(currPos);
+    return 0;
+  }
+
+  const size_t length = static_cast<size_t>(endPos);
   enigma::files.get(fileid).fs.seekg(currPos);
   try_io_and_print(enigma::files.get(fileid))
   return length;
@@ -202,28 +213,33 @@ size_t file_bin_size(int fileid) {
 
 // Returns the current position (in bytes; 0 is the first position) of the file with the given file id.
 size_t file_bin_position(int fileid) {
-  return enigma::files.get(fileid).fs.tellg();
+  const std::streampos position = enigma::files.get(fileid).fs.tellg();
+  if (position < 0) {
+    try_io_and_print(enigma::files.get(fileid))
+    return 0;
+  }
+  return static_cast<size_t>(position);
 }
 
 // Moves the current position of the file to the indicated position. To append to a file move the position to the size of the file before writing.
 void file_bin_seek(int fileid, size_t pos) {
   enigma::files.get(fileid).fs.seekg(pos);
+  enigma::files.get(fileid).fs.seekp(pos);
   try_io_and_print(enigma::files.get(fileid))
 }
 
 // Writes a byte of data to the file with the given file id.
 void file_bin_write_byte(int fileid, unsigned char byte) {
-  enigma::files.get(fileid).fs << byte;
+  enigma::files.get(fileid).fs.put(static_cast<char>(byte));
   try_io_and_print(enigma::files.get(fileid))
 }
 
 // Reads a byte of data from the file and returns this
 int file_bin_read_byte(int fileid) {
-  unsigned char byte = 0;
-  enigma::files.get(fileid).fs >> std::noskipws >> byte;
+  const int value = enigma::files.get(fileid).fs.get();
   bool good = enigma::files.get(fileid).fs.good();
   try_io_and_print(enigma::files.get(fileid))
-  return (!good) ? -1 : static_cast<int>(byte);
+  return (!good) ? -1 : value;
 }
 
 } // NAMESPACE enigma_user
