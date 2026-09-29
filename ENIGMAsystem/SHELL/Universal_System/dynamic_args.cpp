@@ -27,9 +27,21 @@ using namespace enigma;
 varargs& varargs::operator,(variant x) { v(argv).push_back(x); argc++; return *this; }
 void varargs::reverse() { std::reverse(v(argv).begin(),v(argv).end()); }
 void varargs::sort() { std::sort(v(argv).begin(),v(argv).end()); }
-variant varargs::get(int i) const { return v(argv)[i]; }
+variant varargs::get(int i) const {
+  if (i < 0 || static_cast<size_t>(i) >= v(argv).size())
+    return variant();
+  return v(argv)[static_cast<size_t>(i)];
+}
 varargs::varargs(): argc(0), argv(new vector<variant>) {}
 varargs::varargs(variant x): argc(1), argv(new vector<variant>) { v(argv).push_back(x); }
 varargs::varargs(varargs& other): argc(other.argc), argv(new vector<variant>) { v(argv).swap(v(other.argv)); other.argc = 0; }
+varargs& varargs::operator=(const varargs& other) {
+  if (this == &other)
+    return *this;
+
+  v(argv) = v(other.argv);
+  argc = other.argc;
+  return *this;
+}
 varargs::~varargs() { delete (vector<variant>*)argv; }
 
