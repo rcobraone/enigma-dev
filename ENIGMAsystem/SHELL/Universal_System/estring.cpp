@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <cstdlib>
+#include <climits>
 #include <vector>
 #include "var4.h"
 #include "estring.h"
@@ -45,6 +46,8 @@ tstring widen(const string &str) {
   if (str.empty()) return L"";
   // Number of shorts will be <= number of bytes; add one for null terminator
   size_t wchar_count = str.size() + 1;
+  if (wchar_count > static_cast<size_t>(INT_MAX))
+  return L"";
   vector<wchar_t> buf(wchar_count);
   wchar_count = (size_t)MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf.data(), (int)wchar_count);
   if (!wchar_count) return L"";
@@ -53,6 +56,8 @@ tstring widen(const string &str) {
 
 string shorten(tstring str) {
   if (str.empty()) return "";
+  if (str.length() > static_cast<size_t>(INT_MAX))
+  return "";
   int nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), nullptr, 0, nullptr, nullptr);
   if (!nbytes) return "";
   vector<char> buf((size_t)nbytes);
@@ -74,7 +79,7 @@ static const char ldgrs[256] = {
   1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0
 };
 
-static const std::string base64_chars = 
+static const std::string base64_chars =
              "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
              "abcdefghijklmnopqrstuvwxyz"
              "0123456789+/";
@@ -93,7 +98,7 @@ string base64_encode(string const& str) {
   int in_ = 0;
   unsigned char char_array_3[3];
   unsigned char char_array_4[4];
-  
+
   while (in_len--) {
     char_array_3[i++] = str[in_]; in_++;
     if (i == 3) {
@@ -175,37 +180,62 @@ double real(variant str) { return str.type ? atof(((string)str).c_str()) : (doub
 
 string ansi_char(char byte) { return string(1,byte); }
 string chr(char val) { return string(1,val); }
-int ord(string str)  { return str[0]; }
+int ord(string str)  { return str.empty() ? 0 : str[0]; }
 
 size_t string_length(string str) { return str.length(); }
 size_t string_length(const char* str) { return strlen(str); }
 
-size_t string_length_utf8(string str) { 
-  size_t res = 0; 
-  for (size_t i = 0; i < str.length(); ++i) 
-    if ((str[i] & 0xC0) != 0x80) 
-      ++res; 
-  return res; 
+size_t string_length_utf8(string str) {
+  size_t res = 0;
+  for (size_t i = 0; i < str.length(); ++i)
+    if ((str[i] & 0xC0) != 0x80)
+      ++res;
+  return res;
 }
 
-size_t string_length_utf8(const char* str) { 
-  size_t res = 0; 
-  for (size_t i = 0; str[i]; ++i) 
-    if ((str[i] & 0xC0) != 0x80) 
-      ++res; 
-  return res; 
+size_t string_length_utf8(const char* str) {
+  size_t res = 0;
+  for (size_t i = 0; str[i]; ++i)
+    if ((str[i] & 0xC0) != 0x80)
+      ++res;
+  return res;
 }
 
 size_t string_pos(string substr,string str) {
-  const size_t res = str.find(substr,0)+1;
-  return res == string::npos ? 0 : (int)res;
+  const size_t pos = str.find(substr);
+  if (pos == string::npos)
+   return 0;
+  return pos + 1;
 }
 
 string string_format(double val, unsigned tot, unsigned dec) {
-  std::vector<char> sbuf(19 + tot + dec);
-  sbuf[0] = 0;
-  sprintf(sbuf.data(), "%0*.*f", tot, dec, val);
-  return sbuf.data();
+  const int width = tot > static_cast<unsigned>(INT_MAX)
+
+                       ? INT_MAX
+
+                        : static_cast<int>(tot);
+
+  const int precision = dec > static_cast<unsigned>(INT_MAX)
+
+                          ? INT_MAX
+
+                          : static_cast<int>(dec);
+
+  const int needed = std::snprintf(nullptr, 0, "%0*.*f",
+
+                                    width, precision, val);
+
+  if (needed < 0)
+
+    return "";
+
+  std::vector<char> sbuf(static_cast<size_t>(needed) + 1);
+
+  std::snprintf(sbuf.data(), sbuf.size(), "%0*.*f",
+
+                width, precision, val);
+
+  return std::string(sbuf.data(), static_cast<size_t>(needed));
 }
 
 string string_copy(string str, int index, int count) {
@@ -221,19 +251,15 @@ string string_set_byte_at(string str, int index, char byte) {
 
 char string_byte_at(string str, int index) {
   unsigned int n = index <= 1 ? 0 : (unsigned int)(index - 1);
-  #ifdef DEBUG_MODE
-    if (n > str.length())
-      DEBUG_MESSAGE("Index " + toString(index) + " is outside range " + toString(str.length()) + " in the following string:\n\"" + str + "\".", MESSAGE_TYPE::M_ERROR);
-  #endif
+  if (n >= str.length())
+    return 0;
   return str[n];
 }
 
 string string_char_at(string str,int index) {
   unsigned int n = index <= 1 ? 0 : (unsigned int)(index - 1);
-  #ifdef DEBUG_MODE
-    if (n > str.length())
-      DEBUG_MESSAGE("Index " + toString(index) + " is outside range " + toString(str.length()) + " in the following string:\n\"" + str + "\".", MESSAGE_TYPE::M_ERROR);
-  #endif
+   if (n >= str.length())
+    return "";
   return string(1, str[n]);
 }
 
@@ -257,6 +283,8 @@ string string_replace_all(string str,string substr,string newstr) {
 }
 
 size_t string_count(string substr,string str) {
+  if (substr.empty())
+   return 0;
   size_t pos = 0, occ = 0;
   const size_t sublen = substr.length();
   while((pos=str.find(substr,pos)) != string::npos)
@@ -281,6 +309,8 @@ string string_upper(string str) {
 }
 
 string string_repeat(string str,int count) {
+  if (count <= 0 || str.empty())
+   return "";
   string ret; ret.reserve(str.length() * count);
   for(int i = count; i; i--) ret.append(str);
   return ret;
