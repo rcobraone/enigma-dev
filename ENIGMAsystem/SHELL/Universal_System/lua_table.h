@@ -23,7 +23,8 @@
 #include <vector>  // Dense part
 #include <cstring> // Memcpy
 #include <cstddef>
-
+#include <climits>
+#include <limits>
 /**
   This file implements a Lua-table-like structure. It borrows ideas not only from
   Lua, but from STL containers. It also borrows the entirety of std::map. This should
@@ -86,9 +87,13 @@ template <class T> struct lua_table {
   }
 
   T& operator[] (size_t ind) {
+    if (ind == std::numeric_limits<size_t>::max())
+      return sparse[ind];	  
     mx_size = my_max(ind+1, mx_size);
     if (ind >= dense.size()) {
-      size_t nsize = my_max(dense.size() << 1, dense.capacity());
+      size_t nsize = dense.capacity();
+      if (dense.size() <= std::numeric_limits<size_t>::max() / 2)
+        nsize = my_max(dense.size() << 1, nsize);
       if (ind >= nsize) {
         return sparse[ind];
       }
@@ -122,7 +127,9 @@ template <class T> struct lua_table {
   }
 
   int max_index() const {
-    return mx_size;
+     return mx_size > static_cast<size_t>(INT_MAX)
+        ? INT_MAX
+        : static_cast<int>(mx_size);;
   }
 
   size_t dense_length() const {
