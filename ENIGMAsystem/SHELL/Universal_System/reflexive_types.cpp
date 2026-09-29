@@ -50,7 +50,10 @@ namespace enigma {
     }
     else if (varnz(rval.d) or varnz(*vspd))
     {
-        *dir = int((180.0+180.0*(1.0-atan2(*vspd,rval.d)/M_PI))+0.5)%360; //The +0.5 rounds it
+        const double angle = atan2(*vspd, rval.d);
+        if (!std::isfinite(angle))
+            return;
+        *dir = int((180.0+180.0*(1.0-angle/M_PI))+0.5)%360; //The +0.5 rounds it
         *spd = hypot(rval.d,*vspd);
     }
     else
@@ -67,7 +70,10 @@ namespace enigma {
     }
     else if (varnz(rval.d) or varnz(*hspd))
     {
-        *dir = int((180.0+180.0*(1.0-atan2(rval.d,*hspd)/M_PI))+0.5)%360; //The +0.5 rounds it
+        const double angle = atan2(rval.d, *hspd);
+        if (!std::isfinite(angle))
+            return;
+        *dir = int((180.0+180.0*(1.0-angle/M_PI))+0.5)%360; //The +0.5 rounds it
         *spd = hypot(rval.d,*hspd);
     }
     else
