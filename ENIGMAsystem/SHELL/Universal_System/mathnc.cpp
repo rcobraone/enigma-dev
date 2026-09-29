@@ -182,11 +182,17 @@ namespace enigma_user
   ma_scalar dot_product_3d(ma_scalar x1,ma_scalar y1,ma_scalar z1,ma_scalar x2,ma_scalar y2, ma_scalar z2) { return (x1 * x2 + y1 * y2 + z1 * z2); }
   ma_scalar dot_product_normalised(ma_scalar x1,ma_scalar y1,ma_scalar x2,ma_scalar y2) {
   	ma_scalar length = sqrt(x1*x1+y1*y1);
+  	
+    if (length == 0)
+      return 0;
 
     x1 = x1/length;
     y1 = y1/length;
 
 	length = sqrt(x2*x2+y2*y2);
+	
+	if (length == 0)
+      return 0;
 
     x2 = x2/length;
     y2 = y2/length;
@@ -195,11 +201,17 @@ namespace enigma_user
   ma_scalar dot_product_normalised_3d(ma_scalar x1,ma_scalar y1,ma_scalar z1,ma_scalar x2,ma_scalar y2, ma_scalar z2) {
 	ma_scalar length = sqrt(x1*x1+y1*y1+z1*z1);
 
+    if (length == 0)
+      return 0;
+
     x1 = x1/length;
     y1 = y1/length;
     z1 = z1/length;
 
 	length = sqrt(x2*x2+y2*y2+z2*z2);
+	
+	if (length == 0)
+      return 0;
 
     x2 = x2/length;
     y2 = y2/length;
@@ -218,6 +230,9 @@ namespace enigma_user
 
   ma_scalar max(const enigma::varargs &t)
   {
+	if (t.argc <= 0)
+      return 0;
+        
     ma_scalar ret = t.get(0), tst;
     for (int i = 1; i < t.argc; i++)
       if ((tst = t.get(i)) > ret)
@@ -227,6 +242,9 @@ namespace enigma_user
 
   ma_scalar min(const enigma::varargs &t)
   {
+	if (t.argc <= 0)
+      return 0;
+
     ma_scalar ret = t.get(0), tst;
     for (int i = 1; i < t.argc; i++)
       if ((tst = t.get(i)) < ret)
@@ -236,6 +254,9 @@ namespace enigma_user
 
   ma_scalar median(enigma::varargs t)
   {
+	if (t.argc <= 0)
+      return 0;  
+	  
     t.sort();
     if (t.argc & 1)
       return t.get(t.argc/2);
@@ -244,6 +265,9 @@ namespace enigma_user
 
   ma_scalar mean(const enigma::varargs &t)
   {
+    if (t.argc <= 0)
+     return 0; 
+	  
     ma_scalar ret = 0;
     for (int i = 0; i < t.argc; i++)
         ret += t.get(i);
@@ -251,6 +275,9 @@ namespace enigma_user
   }
 
   variant choose(const enigma::varargs& args) {
+	 if (args.argc <= 0)
+      return variant();
+
      return args.get(rand() % args.argc);
   }
 }
