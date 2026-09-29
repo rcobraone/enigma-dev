@@ -294,7 +294,9 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   }
 
   size_t string_length()   const { return sval().length(); }
-  char char_at(size_t ind) const { return sval()[ind]; }
+  char char_at(size_t ind) const {
+    return ind < sval().size() ? sval()[ind] : '\0';
+  }
 
   std::string to_string() const {
     if (type == ty_string)  return sval();
@@ -306,13 +308,18 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   // Our bool cast is special... thanks, Delphi
   operator bool() const {
     // TODO: Enable turning this off...
+    if (type == enigma_user::ty_pointer)
+      return rval.p != nullptr;
     return lrint(rval.d) > 0;
   }
 
   // Char casting must be explicit, or else string construction is ambiguous.
   // Also, this is a good place for special logic.
   explicit operator char() const {
-    if (type == ty_string) return sval()[0];
+    if (type == ty_string)
+      return sval().empty() ? '\0' : sval()[0];
+    if (type == enigma_user::ty_pointer)
+      return rval.p ? 1 : 0;    
     return (char) rval.d;
   }
 
@@ -322,11 +329,13 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   variant(const void *p):
       enigma::variant_real_union(p), type(enigma_user::ty_pointer) {}
   variant(const variant &x):
-      enigma::variant_real_union(x.rval.d),
+      enigma::variant_real_union(
+          x.type == enigma_user::ty_pointer ? x.rval.p : x.rval.d),     
       enigma::variant_string_wrapper(x.sval()),
       type(x.type) {}
   variant(variant rvalue_ref x):
-      enigma::variant_real_union(x.rval.d),
+      enigma::variant_real_union(
+          x.type == enigma_user::ty_pointer ? x.rval.p : x.rval.d),
       enigma::variant_string_wrapper(x.release_sval()),
       type(x.type) {}
 
