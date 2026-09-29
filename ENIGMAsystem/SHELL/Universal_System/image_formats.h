@@ -36,8 +36,13 @@ struct RawImage {
     other.pxdata = nullptr;
   }
   void resize(unsigned w, unsigned h) {
+    const size_t size = static_cast<size_t>(w) *
+
+                        static_cast<size_t>(h) * 4u;
+
+    unsigned char* new_pxdata = new unsigned char[size];
     delete[] pxdata;
-    pxdata = new unsigned char[w*h*4];
+    pxdata = new_pxdata;
     this->w = w;
     this->h = h;
   }

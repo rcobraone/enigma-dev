@@ -46,7 +46,10 @@ std::map<std::filesystem::path, ImageLoadFunction> image_load_handlers = {{".bmp
 std::map<std::filesystem::path, ImageSaveFunction> image_save_handlers = {{".bmp", image_save_bmp}};
 
 Color image_get_pixel_color(const RawImage& in, unsigned x, unsigned y) {
-  Color c;
+    Color c{};
+    if (in.pxdata == nullptr || x >= in.w || y >= in.h)
+      return c;
+
   size_t index = 4 * (y * in.w + x);
   c.b = in.pxdata[index];
   c.g = in.pxdata[index + 1];
@@ -138,6 +141,9 @@ void image_remove_color(RawImage& in) {
 }
 
 std::vector<RawImage> image_split(const RawImage& in, unsigned imgcount) {
+  if (imgcount == 0)
+    return {};
+    
   std::vector<RawImage> imgs(imgcount);
   unsigned splitWidth = in.w / imgcount;
   
@@ -170,6 +176,9 @@ std::vector<RawImage> image_split(const RawImage& in, unsigned imgcount) {
 
 RawImage image_pad(const RawImage& in, unsigned newWidth, unsigned newHeight) {
   RawImage padded;
+  if (newWidth < in.w || newHeight < in.h)
+    return padded;
+  
   padded.w = newWidth;
   padded.h = newHeight;
   
@@ -196,6 +205,9 @@ RawImage image_pad(const RawImage& in, unsigned newWidth, unsigned newHeight) {
 }
 
 RawImage image_crop(const RawImage& in, unsigned newWidth, unsigned newHeight) {
+  if (newWidth > in.w || newHeight > in.h)
+    return RawImage();
+  
   RawImage img;
   img.w = newWidth;
   img.h = newHeight;
@@ -300,7 +312,7 @@ std::vector<RawImage> image_load(const std::filesystem::path& filename) {
 int image_save(const std::filesystem::path& filename, const unsigned char* data, unsigned width, unsigned height, unsigned fullwidth, unsigned fullheight, bool flipped) {
   std::filesystem::path extension = filename.extension();
   auto handler = image_save_handlers.find(ToLower(extension.u8string()));
-  if (extension.empty() || handler != image_save_handlers.end()) {
+  if (!extension.empty() && handler != image_save_handlers.end()) {
     return (*handler).second(filename, data, width, height, fullwidth, fullheight, flipped);
   } else {
     DEBUG_MESSAGE("Unsupported image format extension in image filename: " + filename.u8string() + " saving as BMP" , MESSAGE_TYPE::M_WARNING);
@@ -433,6 +445,21 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
     fprintf(stderr, "No support for %dbpp bitmaps\n", bmp_info.bitsPerPixel);
     return imgs;
   }
+  
+  const uint64_t bytes_per_pixel = bmp_info.bitsPerPixel / 8;
+  const uint64_t row_bytes =
+      static_cast<uint64_t>(bmp_info.width) * bytes_per_pixel;
+  const uint64_t padded_row_bytes =
+      (row_bytes + 3u) & ~uint64_t(3u);
+  const uint64_t pixel_data_size =
+      padded_row_bytes * static_cast<uint64_t>(bmp_info.height);
+
+  if (bmp_file.dataStart > image_data.size() ||
+      pixel_data_size > image_data.size() - bmp_file.dataStart) {
+    fprintf(stderr, "Truncated bitmap data\n");
+    return imgs;
+  }
+  
   bool rgba = bmp_info.isRGBA();
   bool argb = bmp_info.isARGB();
   if (bmp_info.bitsPerPixel == 32 && !rgba && !argb) {
