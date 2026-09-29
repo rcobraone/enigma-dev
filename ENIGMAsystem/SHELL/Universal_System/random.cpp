@@ -17,6 +17,7 @@
 **/
 
 #include "random.h"
+#include <cstdint>
 
 // Note: This hack is justifiable in that it was put here to prevent
 // around contributors' bad habits, not because of developers' bad habits.
@@ -141,7 +142,12 @@ namespace enigma_user
   }
 
   int mtrandom_integer(int x) {
-    return x > 0? mtrandom32() * (x/0xFFFFFFFF) : 0;
+    if (x <= 0)
+      return 0;
+
+    return static_cast<int>(
+        (static_cast<uint64_t>(mtrandom32()) *
+         static_cast<uint64_t>(x)) >> 32);
   }
 
   int random_set_seed(int seed) { return enigma::Random_Seed = seed; }
