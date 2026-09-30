@@ -27,6 +27,8 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <cstdint>
 
 using std::string;
 
@@ -45,6 +47,11 @@ unsigned BinaryBuffer::GetSize() { return data.size(); }
 void BinaryBuffer::Resize(unsigned size) { data.resize(size, 0); }
 
 void BinaryBuffer::Seek(unsigned offset) {
+  if (GetSize() == 0) {
+    position = 0;
+    return;
+  }
+
   position = offset;
   while (position >= GetSize()) {
     switch (type) {
@@ -62,14 +69,26 @@ void BinaryBuffer::Seek(unsigned offset) {
 }
 
 unsigned char BinaryBuffer::ReadByte() {
+  if (GetSize() == 0)
+    return 0;
+
   Seek(position);
+  if (position >= GetSize())
+    return 0;
+
   unsigned char byte = data[position];
   Seek(position + 1);
   return byte;
 }
 
 void BinaryBuffer::WriteByte(unsigned char byte) {
+  if (GetSize() == 0)
+    return;
+
   Seek(position);
+  if (position >= GetSize())
+    return;
+
   data[position] = byte;
   Seek(position + 1);
 }
@@ -116,8 +135,13 @@ bool buffer_exists(int buffer) {
 void buffer_copy(int src_buffer, unsigned src_offset, unsigned size, int dest_buffer, unsigned dest_offset) {
   get_buffer(srcbuff, src_buffer);
   get_buffer(dstbuff, dest_buffer);
+  if (src_offset > srcbuff->GetSize())
+    return;
+  if (dest_offset > dstbuff->GetSize())
+    return;
 
-  unsigned over = size - srcbuff->GetSize();
+  const unsigned src_size = srcbuff->GetSize();
+  const unsigned over = size > src_size ? size - src_size : 0;
   switch (dstbuff->type) {
     case buffer_wrap:
       dstbuff->data.insert(dstbuff->data.begin() + dest_offset, srcbuff->data.begin() + src_offset,
@@ -137,24 +161,35 @@ void buffer_copy(int src_buffer, unsigned src_offset, unsigned size, int dest_bu
 
 void buffer_save(int buffer, string filename) {
   get_buffer(binbuff, buffer);
-  std::ofstream myfile(filename.c_str());
+  std::ofstream myfile(filename.c_str(), std::ios::binary);
   if (!myfile.is_open()) {
     DEBUG_MESSAGE("Unable to open file " + filename, MESSAGE_TYPE::M_ERROR);
     return;
   }
-  myfile.write(reinterpret_cast<const char*>(&binbuff->data[0]), binbuff->data.size());
+  if (!binbuff->data.empty())
+    myfile.write(reinterpret_cast<const char*>(binbuff->data.data()),
+                 static_cast<std::streamsize>(binbuff->data.size()));
   myfile.close();
 }
 
 void buffer_save_ext(int buffer, string filename, unsigned offset, unsigned size) {
   get_buffer(binbuff, buffer);
-  std::ofstream myfile(filename.c_str());
+  if (offset > binbuff->GetSize())
+    return;
+
+  std::ofstream myfile(filename.c_str(), std::ios::binary);
   if (!myfile.is_open()) {
     DEBUG_MESSAGE("Unable to open file " + filename, MESSAGE_TYPE::M_ERROR);
     return;
   }
 
-  unsigned over = size - binbuff->GetSize();
+  const unsigned available = binbuff->GetSize() - offset;
+  const unsigned over = size > available ? size - available : 0
+  
+  if (binbuff->type != buffer_grow &&
+      size > binbuff->GetSize() - offset)
+    size = binbuff->GetSize() - offset;
+
   switch (binbuff->type) {
     case buffer_wrap:
       myfile.write(reinterpret_cast<const char*>(&binbuff->data[offset]), size - over);
@@ -180,28 +215,60 @@ int buffer_load(string filename) {
   int id = enigma::get_free_buffer();
   enigma::buffers.insert(enigma::buffers.begin() + id, buffer);
 
-  std::ifstream myfile(filename.c_str());
+  std::ifstream myfile(filename.c_str(), std::ios::binary);
   if (!myfile.is_open()) {
     DEBUG_MESSAGE("Unable to open file " + filename, MESSAGE_TYPE::M_ERROR);
+    delete buffer;
     return -1;
   }
-  myfile.read(reinterpret_cast<char*>(&buffer->data[0]), myfile.tellg());
+  myfile.seekg(0, std::ios::end);
+  const std::streampos file_size = myfile.tellg();
+  if (file_size < 0 ||
+      static_cast<std::uintmax_t>(file_size) >
+          static_cast<std::uintmax_t>(std::numeric_limits<unsigned>::max())) {
+    myfile.close();
+    delete buffer;
+   return -1;
+  }
+
+  buffer->data.resize(static_cast<size_t>(file_size));
+  myfile.seekg(0, std::ios::beg);
+  if (file_size > 0)
+    myfile.read(reinterpret_cast<char*>(buffer->data.data()), file_size);
   myfile.close();
+  enigma::buffers.insert(enigma::buffers.begin() + id, buffer);
 
   return id;
 }
 
 void buffer_load_ext(int buffer, string filename, unsigned offset) {
   get_buffer(binbuff, buffer);
+  if (offset > binbuff->GetSize())
+    return;
 
-  std::ifstream myfile(filename.c_str());
+  std::ifstream myfile(filename.c_str(), std::ios::binary);
   if (!myfile.is_open()) {
     DEBUG_MESSAGE("Unable to open file " + filename, MESSAGE_TYPE::M_ERROR);
     return;
   }
   std::vector<char> data;
-  myfile.read(reinterpret_cast<char*>(&data[0]), myfile.tellg());
-  unsigned over = data.size() - binbuff->GetSize();
+  myfile.seekg(0, std::ios::end);
+  const std::streampos file_size = myfile.tellg();
+  if (file_size < 0 ||
+      static_cast<std::uintmax_t>(file_size) >
+          static_cast<std::uintmax_t>(std::numeric_limits<unsigned>::max())) {
+    myfile.close();
+    return;
+  }
+
+  data.resize(static_cast<size_t>(file_size));
+  myfile.seekg(0, std::ios::beg);
+  if (file_size > 0)
+    myfile.read(data.data(), file_size);
+  const size_t buffer_size = binbuff->GetSize();
+  const size_t data_size = data.size();
+  const size_t over =
+      data_size > buffer_size ? data_size - buffer_size : 0;
   switch (binbuff->type) {
     case buffer_wrap:
       binbuff->data.insert(binbuff->data.begin() + offset, data.begin(), data.end() - over);
@@ -220,19 +287,26 @@ void buffer_load_ext(int buffer, string filename, unsigned offset) {
 
 void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned size) {
   get_buffer(binbuff, buffer);
+  if (size > std::numeric_limits<unsigned>::max() - offset)
+    return;
+
+    if (size > std::numeric_limits<unsigned>::max() - offset)
+    return;
+
   unsigned nsize = offset + size;
+  
   if (binbuff->GetSize() < nsize && binbuff->type == buffer_grow) {
     binbuff->data.resize(nsize);
   }
   unsigned pos = offset;
-  for (unsigned i = 0; i < buffer_sizeof(type); i++) {
-    binbuff[pos] = value[i];
-    if (i > binbuff->GetSize()) {
-      if (binbuff->type != buffer_wrap) {
-        break;
-      }
-      pos = 0;
-    }
+  const unsigned type_size = buffer_sizeof(type);
+  const unsigned type_size = buffer_sizeof(type);
+  for (unsigned i = 0; i < type_size; i++) {
+    if (pos >= binbuff->GetSize())
+      break;
+
+	binbuff[pos] = value[i];  
+    ++pos;
   }
 }
   
@@ -291,9 +365,13 @@ void buffer_seek(int buffer, int base, unsigned offset) {
       binbuff->Seek(offset);
       break;
     case buffer_seek_end:
+      if (offset > std::numeric_limits<unsigned>::max() - binbuff->GetSize())
+        return;
       binbuff->Seek(binbuff->GetSize() + offset);
       break;
     case buffer_seek_relative:
+      if (offset > std::numeric_limits<unsigned>::max() - binbuff->position)
+        return;   
       binbuff->Seek(binbuff->position + offset);
       break;
   }
@@ -335,10 +413,13 @@ variant buffer_peek(int buffer, unsigned offset, int type) {
   } else {
     char byte = '1';
     std::vector<char> data;
-    while (byte != 0x00) {
+    while (byte != 0x00 && binbuff->position < binbuff->GetSize()) {
       byte = binbuff->ReadByte();
-      data.push_back(byte);
+      if (byte != 0x00)
+        data.push_back(byte);
     }
+    if (data.empty())
+      return variant("");
     return variant(&data[0]);
   }
 }
