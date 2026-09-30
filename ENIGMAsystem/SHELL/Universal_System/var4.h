@@ -670,6 +670,9 @@ struct var : variant {
   int array_len() const { return array1d.max_index(); }
   int array_height() const { return array2d.max_index(); }
   int array_len(int row) const {
+	if (row < 0)
+      return 0;
+      
     if (row) return array2d[row].max_index();
     return array1d.max_index();
   }
