@@ -184,7 +184,7 @@ void buffer_save_ext(int buffer, string filename, unsigned offset, unsigned size
   }
 
   const unsigned available = binbuff->GetSize() - offset;
-  const unsigned over = size > available ? size - available : 0
+  const unsigned over = size > available ? size - available : 0;
   
   if (binbuff->type != buffer_grow &&
       size > binbuff->GetSize() - offset)
@@ -198,10 +198,10 @@ void buffer_save_ext(int buffer, string filename, unsigned offset, unsigned size
     case buffer_grow:
       //TODO: Might need to use min(size, binbuff->GetSize()); for the last parameter.
       //Depends on whether Stupido will write 0's to fill in the entire size you gave it even though the data isn't that big.
-      myfile.write(reinterpret_cast<const char*>(&binbuff->data[offset]), size);
+      myfile.write(reinterpret_cast<const char*>(binbuff->data.data() + offset), size);
       break;
     default:
-      myfile.write(reinterpret_cast<const char*>(&binbuff->data[offset]), binbuff->GetSize());
+      myfile.write(reinterpret_cast<const char*>(binbuff->data.data() + offset), size);
       break;
   }
 
@@ -213,7 +213,6 @@ int buffer_load(string filename) {
   buffer->type = buffer_grow;
   buffer->alignment = 1;
   int id = enigma::get_free_buffer();
-  enigma::buffers.insert(enigma::buffers.begin() + id, buffer);
 
   std::ifstream myfile(filename.c_str(), std::ios::binary);
   if (!myfile.is_open()) {
@@ -228,7 +227,7 @@ int buffer_load(string filename) {
           static_cast<std::uintmax_t>(std::numeric_limits<unsigned>::max())) {
     myfile.close();
     delete buffer;
-   return -1;
+    return -1;
   }
 
   buffer->data.resize(static_cast<size_t>(file_size));
@@ -299,7 +298,6 @@ void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned 
     binbuff->data.resize(nsize);
   }
   unsigned pos = offset;
-  const unsigned type_size = buffer_sizeof(type);
   const unsigned type_size = buffer_sizeof(type);
   for (unsigned i = 0; i < type_size; i++) {
     if (pos >= binbuff->GetSize())
