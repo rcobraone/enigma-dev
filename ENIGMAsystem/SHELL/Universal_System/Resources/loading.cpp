@@ -87,21 +87,38 @@ namespace enigma
       }
       int nullhere;
       // Read the magic number so we know we're looking at our own data
-      fseek_wrapper(resfile,-8,SEEK_END);
+      if (fseek_wrapper(resfile,-8,SEEK_END) != 0) {
+        fclose_wrapper(resfile);
+        break;
+      }
+
       char str_quad[4];
       if (!fread_wrapper(str_quad,4,1,resfile) or str_quad[0] != 'r' or str_quad[1] != 'e' or str_quad[2] != 's' or str_quad[3] != '0') {
         DEBUG_MESSAGE("No resource data in exe", MESSAGE_TYPE::M_ERROR);
+        fclose_wrapper(resfile);
         break;
       }
 
       // Get where our resources are located in the module
       int pos;
-      if (!fread_wrapper(&pos,4,1,resfile)) break;
+      if (!fread_wrapper(&pos,4,1,resfile)) {
+        fclose_wrapper(resfile);
+        break;
+      }
 
       // Go to the start of the resource data
-      fseek_wrapper(resfile,pos,SEEK_SET);
-      if (!fread_wrapper(&nullhere,4,1,resfile)) break;
-      if(nullhere) break;
+      if (pos < 0 || fseek_wrapper(resfile,pos,SEEK_SET) != 0) {
+        fclose_wrapper(resfile);
+        break;
+      }
+      if (!fread_wrapper(&nullhere,4,1,resfile)) {
+        fclose_wrapper(resfile);
+        break;
+      }
+      if(nullhere) {
+        fclose_wrapper(resfile);
+        break;
+      }
 
       enigma::exe_loadsprs(resfile);
       enigma::exe_loadsounds(resfile);
