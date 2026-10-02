@@ -24,6 +24,7 @@
 #include "Graphics_Systems/graphics_mandatory.h"
 #include "Graphics_Systems/General/GStextures.h"
 #include "Widget_Systems/widgets_mandatory.h"
+#include <limits>
 
 using enigma::Background;
 using enigma::backgrounds;
@@ -40,7 +41,7 @@ namespace {
 Background background_add_helper(std::string filename, bool transparent, bool smooth, bool preload, bool mipmap) {
   unsigned fullwidth, fullheight;
   std::vector<RawImage> imgs = image_load(filename);
-      
+     
   Background nb;
   nb.isTileset = false;
   
@@ -72,7 +73,24 @@ int background_add(std::string filename, bool transparent, bool smooth, bool pre
 
 int background_create_color(unsigned w, unsigned h, int col, bool preload) {
   unsigned int fullwidth = nlpo2(w), fullheight = nlpo2(h);
-  RawImage img(new unsigned char[fullwidth * fullheight * 4], fullwidth, fullheight);
+  if (fullheight != 0 &&
+      static_cast<size_t>(fullwidth) >
+          std::numeric_limits<size_t>::max() / fullheight) {
+    DEBUG_MESSAGE("ERROR - Background dimensions are too large.",
+                  MESSAGE_TYPE::M_USER_ERROR);
+    return -1;
+  }
+
+  const size_t pixels =
+      static_cast<size_t>(fullwidth) * static_cast<size_t>(fullheight);
+
+  if (pixels > std::numeric_limits<size_t>::max() / 4) {
+    DEBUG_MESSAGE("ERROR - Background dimensions are too large.",
+                  MESSAGE_TYPE::M_USER_ERROR);
+    return -1;
+  }
+
+  RawImage img(new unsigned char[pixels * 4], fullwidth, fullheight);
   std::fill((unsigned*)(img.pxdata), (unsigned*)(img.pxdata) + fullwidth * fullheight, (COL_GET_R(col) | (COL_GET_G(col) << 8) | (COL_GET_B(col) << 16) | 255 << 24));
   int textureID = graphics_create_texture(img, false);
   return backgrounds.add(std::move(Background(w, h, fullwidth, fullheight, textureID)));
@@ -112,6 +130,9 @@ int background_duplicate(int back) {
 }
 
 void background_assign(int back, int copy_background, bool free_texture) {
+  if (back == copy_background)
+    return;
+	
   backgrounds.get(back).FreeTexture();
   Background copy = backgrounds.get(copy_background);
   backgrounds.assign(back, std::move(copy));
