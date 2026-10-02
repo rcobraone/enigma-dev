@@ -45,7 +45,8 @@ class OffsetVector {
  public:
   OffsetVector(): data_(nullptr) {}
   OffsetVector(const OffsetVector<T, LEFT> &other):
-    data_owner_(other.data_owner_), data_(data_owner_.data() - LEFT) {}
+    data_owner_(other.data_owner_),
+    data_(data_owner_.empty() ? nullptr : data_owner_.data() - LEFT) {
   size_t size() const {
     return data_owner_.size() + LEFT;
   }
@@ -68,8 +69,16 @@ class OffsetVector {
     return data()[index];
   }
   void resize(size_t count) {
-    data_owner_.resize(count - LEFT);
-    data_ = data_owner_.data() - LEFT;
+    if (count < static_cast<size_t>(LEFT)) {
+      data_owner_.clear();
+      data_ = nullptr;
+      return;
+    }
+
+    data_owner_.resize(count - static_cast<size_t>(LEFT));
+    data_ = data_owner_.empty()
+      ? nullptr
+      : data_owner_.data() - LEFT
   }
 };
 
@@ -109,7 +118,9 @@ class AssetArray {
    public:
     iterator(AssetArray& assets, int ind): assets(assets), ind(ind) {}
     iterator operator++() {
-      while (!assets.exists(++ind) && size_t(ind) < assets.size());
+      while (++ind >= 0 &&
+             static_cast<size_t>(ind) < assets.size() &&
+             !assets.exists(ind));
       return *this;
     }
     bool operator!=(const iterator& other) const { return ind != other.ind; }
@@ -133,12 +144,13 @@ class AssetArray {
   int assign(int id, T&& asset) {
     if (exists(id)) assets_[id].destroy();
     else {
-      #ifdef DEBUG_MODE
-      if (id < 0) {
-        DEBUG_MESSAGE("Attempting to assign " + (std::string)T::getAssetTypeName() + " asset " + std::to_string(id) + " to negative index.", MESSAGE_TYPE::M_USER_ERROR);
-        return id;
-      }
-      #endif
+     if (id < 0) {
+#ifdef DEBUG_MODE
+      DEBUG_MESSAGE("Attempting to assign " + (std::string)T::getAssetTypeName() + " asset " + std::to_string(id) + " to negative index.", MESSAGE_TYPE::M_USER_ERROR);
+#endif
+      return id;
+    }
+     
       if (size_t(id) >= size()) assets_.resize(size_t(id) + 1);
     }
     assets_[id] = std::move(asset);
