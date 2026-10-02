@@ -25,6 +25,7 @@
 #include "Widget_Systems/widgets_mandatory.h"
 
 #include <string>
+#include <limits>
 
 using enigma::Sprite;
 using enigma::sprites;
@@ -35,10 +36,20 @@ using enigma::RawImage;
 namespace {
 
 Sprite sprite_add_helper(std::string filename, int imgnumb, bool precise, bool transparent, bool smooth, bool preload, int x_offset, int y_offset, bool mipmap) {
-  std::vector<RawImage> imgs = enigma::image_load(filename);
+
+  if (imgnumb <= 0) {
+    DEBUG_MESSAGE(
+        "ERROR - Invalid sprite image count: " +
+        std::to_string(imgnumb),
+        MESSAGE_TYPE::M_USER_ERROR);
+    return Sprite();
+  }
   
+  std::vector<RawImage> imgs = enigma::image_load(filename);
   if (imgs.empty()) {
-    DEBUG_MESSAGE("ERROR - Failed to append sprite to index!", MESSAGE_TYPE::M_ERROR);
+    DEBUG_MESSAGE(
+       "ERROR - Unable to load sprite image: " + filename,
+        MESSAGE_TYPE::M_USER_ERROR);
     return Sprite();
   }
   
@@ -175,6 +186,9 @@ int sprite_duplicate(int ind) {
 }
 
 void sprite_assign(int ind, int copy_sprite, bool free_texture) {
+  if (ind == copy_sprite)
+    return;
+	
   if (free_texture) sprites.get(ind).FreeTextures();
   Sprite copy = sprites.get(copy_sprite);
   sprites.assign(ind, std::move(copy));
@@ -206,6 +220,12 @@ void sprite_set_alpha_from_sprite(int ind, int copy_sprite, bool free_texture) {
 
   Sprite& spr = sprites.get(ind);
   const Sprite& spr_copy = sprites.get(copy_sprite);
+
+  if (spr_copy.SubimageCount() == 0) {
+    DEBUG_MESSAGE("ERROR - Source sprite has no subimages.",
+                  MESSAGE_TYPE::M_USER_ERROR);
+    return;
+  }
   
   // FIXME: this will break when we add functionality for removing subimages
   for (size_t i = 0; i < spr.SubimageCount(); i++)
@@ -249,9 +269,11 @@ void sprite_save(int ind, unsigned subimg, std::string fname) {
   const Sprite& spr = sprites.get(ind);
   
   if (spr.SubimageCount() <= subimg) {
-    DEBUG_MESSAGE("Requested subimage: " + std::to_string(subimg) + " out of range. Sprite: " 
-                 +  std::to_string(ind) + " only has " + std::to_string(spr.SubimageCount()) 
-                 + " subimages.", MESSAGE_TYPE::M_USER_ERROR);
+    DEBUG_MESSAGE("Requested subimage: "
+ std::to_string(subimg) + " out of range. Sprite: " 
+ std::to_string(ind) + " only has "
+ std::to_string(spr.SubimageCount()) 
+ " subimages.", MESSAGE_TYPE::M_USER_ERROR);
     return;
   }
   
@@ -268,7 +290,20 @@ void sprite_save(int ind, unsigned subimg, std::string fname) {
 //void sprite_save_strip(int ind, std::string fname); //FIXME: We don't support this yet
 
 int sprite_create_color(unsigned w, unsigned h, int col) {
-  RawImage img(new unsigned char[w * h * 4], w, h);
+  if (h != 0 && w > std::numeric_limits<size_t>::max() / h) {
+    DEBUG_MESSAGE("ERROR - Sprite dimensions are too large.",
+                  MESSAGE_TYPE::M_USER_ERROR);
+    return -1;
+  }
+
+  const size_t pixels = static_cast<size_t>(w) * h;
+  if (pixels > std::numeric_limits<size_t>::max() / 4) {
+    DEBUG_MESSAGE("ERROR - Sprite dimensions are too large.",
+                  MESSAGE_TYPE::M_USER_ERROR);
+    return -1;
+  }
+
+  RawImage img(new unsigned char[pixels * 4], w, h);
   std::fill((unsigned*)(img.pxdata), (unsigned*)(img.pxdata) + w * h, (COL_GET_R(col) | (COL_GET_G(col) << 8) | (COL_GET_B(col) << 16) | 255 << 24));
 
   Sprite s(w, h, 0, 0);
