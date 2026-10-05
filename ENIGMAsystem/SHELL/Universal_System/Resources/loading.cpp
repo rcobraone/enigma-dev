@@ -82,6 +82,7 @@ namespace enigma
         windowsystem_write_exename(exename);
         if (!(resfile = fopen_wrapper(exename,"rb"))) {
           DEBUG_MESSAGE("No resource data in exe", MESSAGE_TYPE::M_ERROR);
+          fclose_wrapper(resfile);
           break;
         }
       }
@@ -107,15 +108,8 @@ namespace enigma
       }
 
       // Go to the start of the resource data
-      if (pos < 0 || fseek_wrapper(resfile,pos,SEEK_SET) != 0) {
-        fclose_wrapper(resfile);
-        break;
-      }
-      if (!fread_wrapper(&nullhere,4,1,resfile)) {
-        fclose_wrapper(resfile);
-        break;
-      }
-      if(nullhere) {
+      fseek_wrapper(resfile,pos,SEEK_SET);
+      if (!fread_wrapper(&nullhere,4,1,resfile) || nullhere) {
         fclose_wrapper(resfile);
         break;
       }
