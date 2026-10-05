@@ -38,10 +38,11 @@ namespace enigma
 
   void exe_loadsounds(FILE_t *exe)
   {
-    int nullhere;
+    char header[4];
 
-    if (!fread_wrapper(&nullhere,4,1,exe)) return;
-    if (memcmp(&nullhere, "SND ", sizeof(int)) != 0)
+    if (fread_wrapper(header,1,sizeof(header),exe) != sizeof(header))
+      return;
+    if (memcmp(header, "SND ", sizeof(header)) != 0)
       return;
 
     // Determine how many sprites we have
@@ -55,13 +56,17 @@ namespace enigma
     for (int i = 0; i < sndcount; i++)
     {
       int id;
-      if (!fread_wrapper(&id,1,4,exe)) return;
+      if (!fread_wrapper(&id,4,1,exe)) return;
 
       unsigned size;
-      if (!fread_wrapper(&size,1,4,exe)) return;
+      if (!fread_wrapper(&size,4,1,exe)) return;
 
       char* fdata = new char[size];
-      if (!fread_wrapper(fdata,1,size,exe)) return;
+      const size_t read = fread_wrapper(fdata,1,size,exe);
+      if (read != size) { delete[] fdata; return; }
+         delete[] fdata;
+         return;
+      }
 
       int e = sound_add_from_buffer(id,fdata,size);
       if (e) DEBUG_MESSAGE("Failed to load sound " + std::to_string(i) + " error " + std::to_string(e), MESSAGE_TYPE::M_ERROR);
