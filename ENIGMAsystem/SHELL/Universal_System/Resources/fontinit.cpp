@@ -28,7 +28,9 @@
 #include "Widget_Systems/widgets_mandatory.h"
 #include "Platforms/General/fileio.h"
 
+#include <cstddef>
 #include <cstring>
+#include <limits>
 #include <string>
 
 namespace enigma {
@@ -51,7 +53,10 @@ void exe_loadfonts(FILE_t* exe) {
 
   for (int rf = 0; rf < rawfontcount; rf++) {
     // int unpacked;
-    if (!fread_wrapper(&fntid, 4, 1, exe)) return;
+    if (fntid < 0 || fntid > rawfontmaxid) {
+     DEBUG_MESSAGE("Invalid font resource id.", MESSAGE_TYPE::M_ERROR);
+     return;
+    }
     if (!fread_wrapper(&twid, 4, 1, exe)) return;
     if (!fread_wrapper(&thgt, 4, 1, exe)) return;
 
@@ -65,9 +70,19 @@ void exe_loadfonts(FILE_t* exe) {
 
     font.height = 0;
 
-    const unsigned int size = twid * thgt;
+    if (thgt != 0 && twid > std::numeric_limits<size_t>::max() / thgt) {
+     DEBUG_MESSAGE("Invalid font dimensions.", MESSAGE_TYPE::M_ERROR);
+     return;
+    }
+    const size_t size = static_cast<size_t>(twid) * thgt;
     unsigned char* mono = new unsigned char[size];
-    if (!fread_wrapper(&mono[0], sizeof(char), size, exe)) return;
+    if (!fread_wrapper(mono, sizeof(char), size, exe)) {
+     delete[] mono;
+    return;
+    }
+    delete[] mono;
+     return;
+    }
     
     unsigned char* pixels = mono_to_rgba(mono, twid, thgt);
     delete[] mono;
