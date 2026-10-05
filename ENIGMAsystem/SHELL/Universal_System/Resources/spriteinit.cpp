@@ -100,12 +100,20 @@ namespace enigma
         if (size!=sz2) {
           DEBUG_MESSAGE("Failed to load sprite: Data is truncated before exe end. Read "+toString(sz2)+
                                   " out of expected "+toString(size), MESSAGE_TYPE::M_ERROR);
+          delete[] cpixels;                                  
+          return;
+        }
+        if (unpacked == std::numeric_limits<unsigned int>::max()) {
+          DEBUG_MESSAGE("Sprite load error: Invalid decompressed size", MESSAGE_TYPE::M_ERROR);
+          delete[] cpixels;
           return;
         }
         unsigned char* pixels=new unsigned char[unpacked+1];
         if (zlib_decompress(cpixels,size,unpacked,pixels) != unpacked)
         {
           DEBUG_MESSAGE("Sprite load error: Sprite does not match expected size", MESSAGE_TYPE::M_ERROR);
+          delete[] pixels;
+          delete[] cpixels;         
           continue;
         }
         delete[] cpixels;
