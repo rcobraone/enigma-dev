@@ -31,8 +31,10 @@
     }
   #define CHECK_ID_V(id) CHECK_ID(id,)
 #else
-  #define CHECK_ID(id, ret)
-  #define CHECK_ID_V(id)
+  #define CHECK_ID(id, ret) \
+    if (!exists(id)) return ret;
+  #define CHECK_ID_V(id) \
+    if (!exists(id)) return;
 #endif
 
 namespace enigma {
@@ -142,6 +144,9 @@ class AssetArray {
   }
 
   int assign(int id, T&& asset) {
+    if (id < 0) {
+      return id;
+    }	  
     if (exists(id)) assets_[id].destroy();
     else {
      if (id < 0) {
