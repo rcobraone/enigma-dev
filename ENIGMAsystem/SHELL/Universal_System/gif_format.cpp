@@ -27,6 +27,7 @@
 #include <cmath>
 #include <sstream>
 #include <iostream>
+#include <limits>
 
 namespace {
 const unsigned int ERR_SUCCESS          = 0; //No error (easy boolean checK)
@@ -80,7 +81,7 @@ struct LogicalScreen {
 typedef std::vector<unsigned int> ColorTuple;
 
 //Return 0b111 for 3, etc.
-#define GetMask(size) ((1 << size) - 1)
+#define GetMask(size) ((1u << (size)) - 1u)
 
 //Turns 1 into [1], etc. Pads up to clearCode
 std::vector<ColorTuple> buildColorTable(size_t colorTableSize, unsigned int clearCode, unsigned int eofCode)
@@ -103,10 +104,10 @@ bool skipSubBlocks(const unsigned char* bytes, size_t& pos, size_t length)
 {
   unsigned int sz = 0;
   for (;;) {
-    if (pos+1>length) { return false; }
+    if (pos >= length) { return false; }
     sz = bytes[pos++];
     if (sz==0) { break; }
-    if (pos+sz>length) { return false; }
+    if (static_cast<size_t>(sz) > length - pos) { return false; }
     pos += sz;
   }
   return true;
@@ -123,12 +124,12 @@ unsigned int readBits2(unsigned char* bytes, size_t& pos, const size_t size, uns
   if (currBit==8) {
     currBit = 0;
     pos++;
-    if (pos>size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
+    if (pos >= size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
     //Do we need to advance a block?
     if (pos>subBlockEnd) {
       subBlockEnd = pos + bytes[pos];
       pos++;
-      if (pos>size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
+      if (pos >= size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
     }
   }
 
@@ -147,12 +148,15 @@ unsigned int readBits2(unsigned char* bytes, size_t& pos, const size_t size, uns
     //Advance a byte
     currBit = 0;
     pos++;
-    if (pos>size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
+    if (pos >= size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
     //Do we need to advance a block?
     if (pos>subBlockEnd) {
+      if (pos >= size) {
+        return ERR_OUT_OF_BITS_IN_BYTESTREAM;
+      }		
       subBlockEnd = pos + bytes[pos];
       pos++;
-      if (pos>size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
+      if (pos >= size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
     }
 
     //We might need all or part of this byte.
@@ -173,13 +177,12 @@ unsigned int readBits2(unsigned char* bytes, size_t& pos, const size_t size, uns
         //Advance a byte
         currBit = 0;
         pos++;
-        if (pos>size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
+        if (pos >= size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
         //Do we need to advance a block?
         if (pos>subBlockEnd) {
           subBlockEnd = pos + bytes[pos];
           pos++;
-          if (pos>size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
-        }
+          if (pos >= size) { return ERR_OUT_OF_BITS_IN_BYTESTREAM; }
 
         //Read. There will never be a need to advance at this point.
         res |= ((bytes[pos]&GetMask(currCodeSize))<<read);
@@ -196,7 +199,12 @@ unsigned char* read_entire_file(const char* filename, size_t& size)
 {
   std::ifstream input(filename, std::ios::binary|std::ios::ate);
   if (input.good()) {
-    size = input.tellg();
+    const std::streampos end = input.tellg();
+    if (end < 0) {
+      return nullptr;
+    }
+
+    size = static_cast<size_t>(end);
     unsigned char* bytes = new unsigned char[size];
     input.seekg(0, std::ios::beg);
     input.read(reinterpret_cast<char*>(bytes), size);
@@ -272,29 +280,32 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
   {
   int num_images = 0;
   for (size_t myPos = pos;;) {
-    if (myPos+1>size) { errno = ERR_OUT_OF_BYTES; return res; }
+    if (myPos >= size) { errno = ERR_OUT_OF_BYTES; return res; }
     unsigned int ctrlCode = bytes[myPos++];
     if (ctrlCode==0x21) { //It's an extension; skip it.
-      if (myPos+2>size) { errno = ERR_OUT_OF_BYTES; return res; }
+      if (size - myPos < 2) { errno = ERR_OUT_OF_BYTES; return res; }
       unsigned int len = bytes[myPos+1]; //Length
       myPos += 2;
-      if (myPos+len>size) { errno = ERR_OUT_OF_BYTES; return res; }
+      if (static_cast<size_t>(len) > size - myPos) {
+        errno = ERR_OUT_OF_BYTES;
+        return res;
+      }
       myPos += len;
       if (!skipSubBlocks(bytes, myPos, size)) { errno = ERR_OUT_OF_BYTES; return res; }
     } else if (ctrlCode==0x3B) { //EOF; done;
       break;
     } else if (ctrlCode==0x2C) { //It's an image; skip and add one.
       num_images++;
-      if (myPos+9>size) { errno = ERR_OUT_OF_BYTES; return res; }
+      if (size - myPos < 9) { errno = ERR_OUT_OF_BYTES; return res; }
       myPos += 9;
       unsigned int pb1 = bytes[myPos-1];
       if (pb1&0x80) { //Skip the local color table.
         unsigned int lctSize = 2<<(pb1 & 0x7);
-        if (myPos+(lctSize*3)>size) { errno = ERR_OUT_OF_BYTES; return res; }
+        if (static_cast<size_t>(lctSize) * 3 > size - myPos) { errno = ERR_OUT_OF_BYTES; return res; }
         myPos += lctSize*3;
       }
       //Skip the LZW min. code size.
-      if (myPos+1>size) { errno = ERR_OUT_OF_BYTES; return res; }
+      if (myPos >= size) { errno = ERR_OUT_OF_BYTES; return res; }
       myPos++;
       if (!skipSubBlocks(bytes, myPos, size)) { errno = ERR_OUT_OF_BYTES; return res; }
     } else {
@@ -313,7 +324,40 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
   //At the same time, save our output properties.
   const unsigned int gif_width  = screen.canvasWidth;
   const unsigned int gif_height = screen.canvasHeight;
-  const unsigned int final_size = gif_width * gif_height * 4;
+
+  if (gif_width == 0 || gif_height == 0) {
+    clearmem(out);
+    errno = ERR_ZERO_IMAGES;
+    return res;
+  }
+
+  if (static_cast<size_t>(gif_height) >
+      std::numeric_limits<size_t>::max() /
+      static_cast<size_t>(gif_width)) {
+    clearmem(out);
+    errno = ERR_INDEX_COUNT_MISMATCH;
+    return res;
+  }
+
+  const size_t max_pixels =
+      static_cast<size_t>(gif_width) *
+      static_cast<size_t>(gif_height);
+
+  const size_t final_size = max_pixels * 4;
+  //limits 512 MiB
+  constexpr size_t MaxGifOutputSize = 512ull * 1024ull * 1024ull;
+
+  if (gif_width != 0 &&
+      static_cast<size_t>(gif_height) >
+          MaxGifOutputSize /
+          (static_cast<size_t>(gif_width) * 4)) {
+    errno = ERR_OVERSCAN;
+    return {};
+  }
+
+  const size_t final_size =
+      static_cast<size_t>(gif_width) *
+      static_cast<size_t>(gif_height) * 4;
   for (RawImage &frame : res) {
     frame.w = gif_width;
     frame.h = gif_height;
@@ -323,13 +367,19 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
   unsigned char *out;
   res[0].pxdata = out = new unsigned char[final_size](); // Initialize to zero.
   if (screen.gctFlag) {
+    if (screen.bgColorIndex >= screen.gctSize) {
+      clearmem(out);
+      errno = ERR_INDEX_COUNT_MISMATCH;
+      return res;
+    }
+	  
     unsigned char r = bytes[globalColorStart + screen.bgColorIndex*3 + 0];
     unsigned char g = bytes[globalColorStart + screen.bgColorIndex*3 + 1];
     unsigned char b = bytes[globalColorStart + screen.bgColorIndex*3 + 2];
     for (size_t y=0; y<gif_height; y++) {
       for (size_t x=0; x<gif_width; x++) {
         size_t pos2 = y*gif_width*4 + x*4;
-        if (pos2+4>final_size) {
+        if (pos2 > final_size - 4) {
           clearmem(out);
           errno = ERR_OVERSCAN;
           return res;
@@ -358,8 +408,17 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
       if (pos+2>size) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; }
       ctrlCode = bytes[pos++]; //Extension control
       unsigned int extLen = bytes[pos++]; //Length
-      if (pos+extLen>size) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; }
+      if (static_cast<size_t>(extLen) > size - pos) {
+        clearmem(out);
+        errno = ERR_OUT_OF_BYTES;
+        return res;
+      }
       if (ctrlCode==0xF9) { //Graphics control extension; we need a bit of data.
+        if (extLen < 4) {
+          clearmem(out);
+          errno = ERR_OUT_OF_BYTES;
+          return res;
+        }		  
         disposalMethod = (bytes[pos]&0x1C)>>2;
         transpColor = (bytes[pos]&0x1) ? bytes[pos+3] : -1;
       }
@@ -368,6 +427,12 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
     } else if (ctrlCode==0x3B) { //EOF; done;
       break;
     } else if (ctrlCode==0x2C) { //It's an image; read and decompress it.
+      if (static_cast<size_t>(curr_img) >= res.size()) {
+        clearmem(out);
+        errno = ERR_INDEX_COUNT_MISMATCH;
+        return res;
+      }
+		
       DEBUG_MESSAGE("[GIF] Reading image: " + std::to_string(curr_img+1) + " of " + std::to_string(res.size()), MESSAGE_TYPE::M_INFO);
       //Read top-level image properties.
       if (pos+9>size) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; }
@@ -381,6 +446,16 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
       pos += 2;
       unsigned int pb1 = bytes[pos++];
       bool lctFlag = pb1&0x80;
+
+      if (left > gif_width ||
+          top > gif_height ||
+          width > gif_width - left ||
+          height > gif_height - top) {
+        clearmem(out);
+        errno = ERR_OVERSCAN;
+        return res;
+      }
+      
       if (pb1&0x40) { clearmem(out); errno = ERR_INTERLACED_IMAGE; return res; }
       unsigned int lctSize = 2<<(pb1 & 0x7);
 
@@ -388,22 +463,48 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
       size_t localColorStart = globalColorStart;
       size_t colorTableSize = screen.gctSize;
       if (lctFlag) {
-        if (pos+(lctSize*3)>size) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; }
+      if (!screen.gctFlag && !lctFlag) {
+        clearmem(out);
+        errno = ERR_OUT_OF_BYTES;
+        return res;
+      }
+
+		  
+      if (static_cast<size_t>(gctSize) * 3 > size - pos) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; }
         localColorStart = pos;
         pos += (lctSize*3);
         colorTableSize = lctSize;
       }
 
+      if (colorTableSize == 0) {
+        clearmem(out);
+        errno = ERR_INDEX_COUNT_MISMATCH;
+        return res;
+      }
       //Read the lzw minimum code size.
       if (pos+1>size) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; }
       unsigned int lzwMinCodeSize = bytes[pos++];
+      if (lzwMinCodeSize < 2 || lzwMinCodeSize > 8) {
+        clearmem(out);
+        errno = ERR_OUT_OF_BITS_IN_BYTESTREAM;
+        return res;
+      }      
 
       //Prepare to read the image data. We always need at least one byte (we check at the end of the loop).
-      if (pos+1>size) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; }
-      unsigned int subBlockEnd = pos + bytes[pos];
+      if (pos >= size) {
+        clearmem(out);
+        errno = ERR_OUT_OF_BYTES;
+        return res;
+      }
+      const size_t subBlockLength = bytes[pos];
+      if (subBlockLength > size - pos - 1) {
+        clearmem(out);
+        errno = ERR_OUT_OF_BYTES;
+        return res;
+      }
+     size_t subBlockEnd = pos + subBlockLength;
       pos++;
-      if (pos>subBlockEnd) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; } //Might be better as "not enough image data"?
-      if (subBlockEnd+1>size) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; }
+
 
       //More stuff.
       const unsigned int clearCode = 1 << lzwMinCodeSize;
@@ -419,7 +520,7 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
       //Read the image data, in blocks. Translate as we go.
       unsigned int currBit = 0;
       unsigned int currCodeSize = lzwMinCodeSize + 1;
-      unsigned int nested = 0; //Sanity check.
+      size_t nested = 0; //Sanity check.
       bool first = true;
 
       unsigned int err = 0;
@@ -441,6 +542,11 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
         }
 
         if (first) {
+          if (currCode >= currColorTable.size()) {
+            clearmem(out);
+            errno = ERR_INDEX_COUNT_MISMATCH;
+            return res;
+          }			
           first = false;
           currTuple = currColorTable[currCode];
         } else {
@@ -451,13 +557,28 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
             currTuple = currColorTable[currCode];
             unsigned int tmp = currColorTable[currCode][0];
             newCode.push_back(tmp);
+            if (currColorTable.size() >= (1u << MaxCodeSize)) {
+              clearmem(out);
+              errno = ERR_CODEBITS_PAST_12;
+              return res;
+            }
             currColorTable.push_back(newCode);
           } else {
             //More complicated
+            if (prevTuple.empty()) {
+              clearmem(out);
+              errno = ERR_INDEX_COUNT_MISMATCH;
+              return res;
+            }            
             unsigned int tmp = prevTuple[0];
             ColorTuple newCode = prevTuple;
             newCode.push_back(tmp);
             currTuple = newCode;
+            if (currColorTable.size() >= (1u << MaxCodeSize)) {
+              clearmem(out);
+              errno = ERR_CODEBITS_PAST_12;
+              return res;
+            }
             currColorTable.push_back(newCode);
           }
 
@@ -468,12 +589,41 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
         }
 
         //Add the pixels.
+        if (currTuple.size() > max_pixels - nested) {
+          clearmem(out);
+          errno = ERR_INDEX_COUNT_MISMATCH;
+          return res;
+        }
+        
+        const size_t framePixels =
+            static_cast<size_t>(width) *
+            static_cast<size_t>(height);
+
+        if (nested > framePixels ||
+            currTuple.size() > framePixels - nested) {
+          clearmem(out);
+          errno = ERR_INDEX_COUNT_MISMATCH;
+          return res;
+        }
+
         nested += currTuple.size();
         for (std::vector<unsigned int>::const_iterator it=currTuple.begin(); it!=currTuple.end(); it++) {
+          if (*it >= colorTableSize) {
+            clearmem(out);
+            errno = ERR_INDEX_COUNT_MISMATCH;
+            return res;
+          }
+
+          if (final_size < 4 || pos2 > final_size - 4) {
+            clearmem(out);
+            errno = ERR_INDEX_COUNT_MISMATCH;
+            return res;
+          }
+			
           //Set1
           if ((*it)!=transpColor) {
             size_t pos2 = y*gif_width*4 + x*4;
-            if (pos2+4>final_size) { clearmem(out); errno = ERR_OVERSCAN; return res; }
+            if (pos2 > final_size - 4) { clearmem(out); errno = ERR_OVERSCAN; return res; }
             out[pos2] = bytes[localColorStart + (*it)*3 + 2];
             out[pos2+1] = bytes[localColorStart + (*it)*3 + 1];
             out[pos2+2] = bytes[localColorStart + (*it)*3 + 0];
@@ -493,7 +643,12 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
       }
 
       //Skip the remaining null terminator.
-      pos = subBlockEnd+1;
+      if (subBlockEnd >= size) {
+        clearmem(out);
+        errno = ERR_OUT_OF_BYTES;
+        return res;
+      }
+      pos = subBlockEnd + 1;
 
       //Skip any remaining sub-blocks (should effectively skip a single "0").
       if (!skipSubBlocks(bytes, pos, size)) { clearmem(out); errno = ERR_OUT_OF_BYTES; return res; }
@@ -507,7 +662,7 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
       }
 
       //We're done! React to the disposal method.
-      if (curr_img+1<res.size()) {
+      if (static_cast<size_t>(curr_img) + 1 < res.size()) {
         res[curr_img+1].pxdata = out = new unsigned char[final_size](); // Initialize to zero.
         if (disposalMethod==1) {
           //Leave the background in place (i.e., repaint it).
@@ -517,7 +672,17 @@ std::vector<RawImage> image_load_gif(const std::filesystem::path& filename)
         } else if (disposalMethod==3) {
           //Restore to the previous state (image, in this case).
           //NOTE: Mostly untested; few GIFs use this.
-          memcpy(res[curr_img+1].pxdata, res[curr_img-1].pxdata, final_size);
+          if (curr_img > 0) {
+            memcpy(res[curr_img+1].pxdata,
+                   res[curr_img-1].pxdata,
+                   final_size);
+          }
+
+        if (nested != max_pixels) {
+          clearmem(out);
+          errno = ERR_INDEX_COUNT_MISMATCH;
+          return res;
+         }          
         }
       }
 
