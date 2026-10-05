@@ -156,7 +156,13 @@ ACCEPT_TYPE(StringTypeEnabler, const char*);
 
 #ifndef JUST_DEFINE_IT_RUN
 
-#define RLY_INLINE __attribute__((always_inline))
+#if defined(__GNUC__) || defined(__clang__)
+#  define RLY_INLINE __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#  define RLY_INLINE __forceinline
+#else
+#  define RLY_INLINE inline
+#endif
 
 template<typename T, typename U, typename V = decltype(+*(T*)0 | +*(U*)0)>
 struct EnumAndNumericBinaryFuncEnabler
@@ -572,11 +578,17 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
 
   template<typename T>
   decltype(0LL << (int)*(T*)nullptr) operator<<(T x) const {
-    return (long long) rval.d << (int) x;
+    const int shift = (int) x;
+    if (shift < 0 || shift >= 64)
+      return 0;
+    return (long long) rval.d << shift;
   }
   template<typename T>
   decltype(0LL >> (int)*(T*)nullptr) operator>>(T x) const {
-    return (long long) rval.d >> (int) x;
+    const int shift = (int) x;
+    if (shift < 0 || shift >= 64)
+      return 0;
+    return (long long) rval.d >> shift;
   }
   template<typename T>
   decltype(0LL & (long long)*(T*)nullptr) operator&(T x) const {
@@ -607,7 +619,9 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
 
   // Other unary operators.
   bool   operator!() const { return !bool(*this); }
-  long   operator~() const { return ~long(*this); }
+  long long operator~() const {
+    return ~(long long) rval.d;
+  }
   double operator-() const { return -rval.d; }
   double operator+() const { return  rval.d; }
 
@@ -754,10 +768,16 @@ VARBINOP double operator%(T a, const U &b) {
 }
 
 VARBINOP long long operator<<(T a, const U &b) {
-  return (long long) a << (long long) b.rval.d;
+  const long long shift = (long long)b.rval.d;
+  if (shift < 0 || shift >= 64)
+    return 0;
+  return (long long)a << shift;
 }
 VARBINOP long long operator>>(T a, const U &b) {
-  return (long long) a >> (long long) b.rval.d;
+  const long long shift = (long long)b.rval.d;
+  if (shift < 0 || shift >= 64)
+    return 0;
+  return (long long)a >> shift;
 }
 VARBINOP long long operator&(T a, const U &b) {
   return (long long) a & (long long) b.rval.d;
