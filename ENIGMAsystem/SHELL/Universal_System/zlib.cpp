@@ -26,7 +26,14 @@ namespace enigma {
 
 unsigned char* zlib_compress(unsigned char* inbuffer,int actualsize)
 {
-    uLongf outsize=(int)(actualsize*1.1)+12;
+if (actualsize < 0)
+return nullptr;
+
+if (!inbuffer && actualsize > 0)
+return nullptr;
+
+uLongf outsize=compressBound(static_cast<uLong>(actualsize));
+
     Bytef* outbytef=new Bytef[outsize];
 
     int res=compress(outbytef,&outsize,(Bytef*)inbuffer,actualsize);
@@ -46,8 +53,20 @@ unsigned char* zlib_compress(unsigned char* inbuffer,int actualsize)
 
 int zlib_decompress(unsigned char* inbuffer, int insize, int uncompresssize,unsigned char* outbytef)
 {
-	uLongf outused=uncompresssize;
-	switch(uncompress(outbytef,&outused,(Bytef*)inbuffer,insize)){
+if (insize < 0 || uncompresssize < 0)
+return -4;
+
+if (!inbuffer && insize > 0)
+return -4;
+
+if (!outbytef && uncompresssize > 0)
+return -4;
+
+uLongf outused=static_cast<uLongf>(uncompresssize);
+
+    switch(uncompress(outbytef,&outused,(Bytef*)inbuffer,
+
+    static_cast<uLong>(insize))){
 	case Z_OK:return outused;
 	case Z_MEM_ERROR:
 		#if DEBUG_MODE
