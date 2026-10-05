@@ -69,10 +69,19 @@ namespace enigma
       if (!fread_wrapper(&hSep,4,1,exe)) return;
       if (!fread_wrapper(&vSep,4,1,exe)) return;
 
-      unpacked = width*height*4;
+      if (height != 0 &&
+          width > std::numeric_limits<size_t>::max() / height / 4)
+        return;
+      const size_t pixel_count = static_cast<size_t>(width) * height;
+      if (pixel_count > std::numeric_limits<size_t>::max() / 4)
+        return;
+      const size_t unpacked_size = pixel_count * 4;
+      if (unpacked_size > std::numeric_limits<unsigned>::max())
+        return;
+      unpacked = static_cast<int>(unpacked_size);
 
       unsigned int size;
-      if (!fread_wrapper(&size,4,1,exe)){};
+      if (!fread_wrapper(&size,4,1,exe)) return;
       
       unsigned char* cpixels=new unsigned char[size+1];
       if (!cpixels)
@@ -83,12 +92,15 @@ namespace enigma
       unsigned int sz2=fread_wrapper(cpixels,1,size,exe);
       if (size!=sz2) {
         DEBUG_MESSAGE("Failed to load background: Data is truncated before exe end. Read " + enigma_user::toString(sz2) + " out of expected " + enigma_user::toString(size), MESSAGE_TYPE::M_ERROR);
+        delete[] cpixels;        
         return;
       }
       unsigned char* pixels=new unsigned char[unpacked+1];
       if (zlib_decompress(cpixels,size,unpacked,pixels) != unpacked)
       {
         DEBUG_MESSAGE("Background load error: Background does not match expected size", MESSAGE_TYPE::M_ERROR);
+        delete[] pixels;
+        delete[] cpixels;        
         continue;
       }
       delete[] cpixels;
