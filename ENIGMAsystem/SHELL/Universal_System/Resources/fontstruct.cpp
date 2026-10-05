@@ -31,6 +31,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <vector>
+#include <limits>
 
 using std::list;
 using std::string;
@@ -66,6 +67,10 @@ namespace enigma
       std::vector<unsigned char*> glyphdata(gcount); // Raw SpriteFont image data
       std::vector<rect_packer::pvrect> glyphmetrics(gcount);
       std::vector<int> glyphx(gcount), glyphy(gcount);
+      auto free_glyphdata = [&glyphdata]() {
+        for (unsigned char* data : glyphdata)
+          delete[] data;
+      };
 
       int gwm = sspr.width, // Glyph width max: sprite width
           ghm = sspr.height, // Glyph height max: sprite height
@@ -80,10 +85,25 @@ namespace enigma
         fontglyph fg;
         unsigned fw, fh;
         unsigned char* data = graphics_copy_texture_pixels(sspr.GetTexture(i), &fw, &fh);
+        if (!data) {
+          DEBUG_MESSAGE("Failed to copy sprite glyph texture.", MESSAGE_TYPE::M_ERROR);
+          free_glyphdata();
+          return false;
+        }
+        const auto texture_rect = sspr.GetTextureRect(i);
+        if (data == nullptr ||
+            texture_rect.w == 0 ||
+            texture_rect.h == 0 ||
+            fw == 0 ||
+            fh == 0) {
+          DEBUG_MESSAGE("Invalid sprite glyph texture width.", MESSAGE_TYPE::M_ERROR);
+          free_glyphdata();
+          return false;
+        }                
         //NOTE: Following line replaced gtw = int((double)sspr.width / sspr.texturewarray[i]);
         //this was to fix non-power of two subimages
         //NTOE2: The commented out code was actually wrong - the width was divided by y instead of x. That is why it only worked with power of two.
-        gtw = int((double)sspr.width / sspr.GetTextureRect(i).w);
+        gtw = int((double)sspr.width / texture_rect.w);
         //gtw = fw;
         glyphdata[i] = data;
 
@@ -142,11 +162,24 @@ namespace enigma
         {
           w > h ? h <<= 1 : w <<= 1,
           rectplane = rect_packer::expand(rectplane, w, h);
-          if (!w or !h) return false;
-        }
+          if (!w or !h) {
+            free_glyphdata();
+            delete rectplane;
+            return false;
+          }
+            for (unsigned char* data : glyphdata)
+              delete[] data;
+            delete rectplane;
+            return false;
+          }
       }
 
-      unsigned char* bigtex = new unsigned char[w*h]();
+    if (h != 0 && w > std::numeric_limits<size_t>::max() / h) {
+      DEBUG_MESSAGE("Font texture size overflow.", MESSAGE_TYPE::M_ERROR);
+      return false;
+    }
+    const size_t texture_size = static_cast<size_t>(w) * h;
+    unsigned char* bigtex = new unsigned char[texture_size]();
       for (unsigned i = 0; i < gcount; i++)
       {
         fontglyph& fg = fgr.glyphs[i];
@@ -260,6 +293,9 @@ bool font_replace_sprite(int ind, int spr, uint32_t first, bool prop, int sep)
   enigma::Sprite& sspr = enigma::sprites.get(spr);
 
   unsigned char gcount = sspr.SubimageCount();
+  if (gcount == 0)
+    return false;
+  
   enigma::SpriteFont *fnt = &sprite_fonts[ind];
   fnt->glyphRanges.clear(); //TODO: Delete glyphs for each range or add it to the destructor?
 
@@ -275,9 +311,15 @@ int font_add_sprite(int spr, uint32_t first, bool prop, int sep)
   enigma::Sprite& sspr = enigma::sprites.get(spr);
 
   unsigned char gcount = sspr.SubimageCount();
+  if (gcount == 0)
+    return -1;
+  
   int id = enigma::font_new(first, gcount);
   enigma::SpriteFont* font = &sprite_fonts[id];
-  if (!enigma::font_pack(font, spr, gcount, prop, sep)) return -1;
+  if (!enigma::font_pack(font, spr, gcount, prop, sep)) {
+    sprite_fonts.destroy(id);
+    return -1;
+  }
   return id;
 }
 
