@@ -49,6 +49,7 @@ class OffsetVector {
   OffsetVector(const OffsetVector<T, LEFT> &other):
     data_owner_(other.data_owner_),
     data_(data_owner_.empty() ? nullptr : data_owner_.data() - LEFT) {
+  }
   size_t size() const {
     return data_owner_.size() + LEFT;
   }
@@ -80,7 +81,7 @@ class OffsetVector {
     data_owner_.resize(count - static_cast<size_t>(LEFT));
     data_ = data_owner_.empty()
       ? nullptr
-      : data_owner_.data() - LEFT
+      : data_owner_.data() - LEFT;
   }
 };
 
