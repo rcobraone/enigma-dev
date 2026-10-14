@@ -41,8 +41,10 @@ namespace enigma {
     varargs& operator,(variant);
     varargs();
     varargs(variant);
-    varargs(varargs&);
+    varargs(const varargs&);
+    varargs(varargs&&) noexcept;
     varargs& operator=(const varargs&);
+    varargs& operator=(varargs&&) noexcept;    
     ~varargs();
     #endif
   };

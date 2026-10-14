@@ -34,7 +34,18 @@ variant varargs::get(int i) const {
 }
 varargs::varargs(): argc(0), argv(new vector<variant>) {}
 varargs::varargs(variant x): argc(1), argv(new vector<variant>) { v(argv).push_back(x); }
-varargs::varargs(varargs& other): argc(other.argc), argv(new vector<variant>) { v(argv).swap(v(other.argv)); other.argc = 0; }
+varargs::varargs(const varargs& other):
+
+    argc(other.argc),
+    argv(new vector<variant>(v(other.argv))) {}
+
+varargs::varargs(varargs&& other) noexcept:
+    argc(other.argc),
+    argv(other.argv) {
+  other.argc = 0;
+  other.argv = new vector<variant>;
+}
+
 varargs& varargs::operator=(const varargs& other) {
   if (this == &other)
     return *this;
@@ -43,5 +54,17 @@ varargs& varargs::operator=(const varargs& other) {
   argc = other.argc;
   return *this;
 }
+
+varargs& varargs::operator=(varargs&& other) noexcept {
+  if (this == &other)
+    return *this;
+  delete (vector<variant>*)argv;
+  argv = other.argv;
+  argc = other.argc;
+  other.argc = 0;
+  other.argv = new vector<variant>;
+  return *this;
+}
+
 varargs::~varargs() { delete (vector<variant>*)argv; }
 
