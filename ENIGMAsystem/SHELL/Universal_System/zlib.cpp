@@ -46,6 +46,8 @@ uLongf outsize=compressBound(static_cast<uLong>(actualsize));
      if (res==Z_BUF_ERROR)
      DEBUG_MESSAGE("Zlib failed to compress the buffer. Output size greater than allotted.", MESSAGE_TYPE::M_ERROR);
      #endif
+     delete[] outbytef;
+     return nullptr;     
     }
 
     return (unsigned char*)outbytef;
