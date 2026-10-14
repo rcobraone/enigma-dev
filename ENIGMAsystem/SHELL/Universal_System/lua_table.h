@@ -88,7 +88,11 @@ template <class T> struct lua_table {
 
   T& operator[] (size_t ind) {
     if (ind == std::numeric_limits<size_t>::max())
-      return sparse[ind];	  
+      return sparse[ind];
+    if (ind == std::numeric_limits<size_t>::max() - 1) {
+      mx_size = std::numeric_limits<size_t>::max();
+      return sparse[ind];
+    }     	  
     mx_size = my_max(ind+1, mx_size);
     if (ind >= dense.size()) {
       size_t nsize = dense.capacity();
