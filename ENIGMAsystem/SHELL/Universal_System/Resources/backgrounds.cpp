@@ -107,7 +107,7 @@ void background_save(int back, std::string fname) {
   
   if (bkg.textureID < 0) {
     DEBUG_MESSAGE("Requested background: " + std::to_string(back) +
-                 + " has no loaded texture.", MESSAGE_TYPE::M_USER_ERROR);
+                  " has no loaded texture.", MESSAGE_TYPE::M_USER_ERROR);
     return;
   }
   
