@@ -199,7 +199,9 @@ RawImage image_pad(const RawImage& in, unsigned newWidth, unsigned newHeight) {
     imgpxptr += (newWidth - colindex) << 2;
   }
   
-  std::memset(imgpxptr, 0, (newHeight - in.h) * newWidth);
+  std::memset(imgpxptr, 0,
+              static_cast<size_t>(newHeight - in.h) *
+              static_cast<size_t>(newWidth) * 4u);
   
   return padded;
 }
@@ -433,7 +435,8 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
 
   // Verify magic number, check header offset sanity.
   if (bmp_file.magic_b != 'B' || bmp_file.magic_m != 'M' ||
-      bmp_file.dataStart + sizeof(BMPInfoHeader) > image_data.length()) {
+      bmp_file.dataStart > image_data.size() ||
+      sizeof(BMPInfoHeader) > image_data.size() - bmp_file.dataStart) {
     fprintf(stderr, "Junk bitmap of size %lu", image_data.size());
     return imgs;
   }

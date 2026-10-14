@@ -21,6 +21,7 @@
 
 #include <vector>
 #include <filesystem>
+#include <limits>
 
 /// NOTE: These image formats expect the data to be un-aligned and always reads and writes with BGRA full color
 
@@ -36,9 +37,17 @@ struct RawImage {
     other.pxdata = nullptr;
   }
   void resize(unsigned w, unsigned h) {
-    const size_t size = static_cast<size_t>(w) *
+    const size_t sw = static_cast<size_t>(w);
+    const size_t sh = static_cast<size_t>(h);
+    if (sh != 0 &&
+        sw > std::numeric_limits<size_t>::max() / sh)
+      throw std::bad_alloc();
 
-                        static_cast<size_t>(h) * 4u;
+    const size_t pixels = sw * sh;
+    if (pixels > std::numeric_limits<size_t>::max() / 4u)
+      throw std::bad_alloc();
+
+    const size_t size = pixels * 4u;;
 
     unsigned char* new_pxdata = new unsigned char[size];
     delete[] pxdata;
