@@ -89,7 +89,6 @@ namespace enigma
       int nullhere;
       // Read the magic number so we know we're looking at our own data
       if (fseek_wrapper(resfile,-8,SEEK_END) != 0) {
-        fclose_wrapper(resfile);
         break;
       }
 
