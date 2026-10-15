@@ -52,6 +52,21 @@ Sprite sprite_add_helper(std::string filename, int imgnumb, bool precise, bool t
         MESSAGE_TYPE::M_USER_ERROR);
     return Sprite();
   }
+  if (imgs.size() == 1 &&
+      static_cast<unsigned>(imgnumb) > imgs[0].w) {
+    DEBUG_MESSAGE(
+        "ERROR - Sprite image count exceeds image width.",
+        MESSAGE_TYPE::M_USER_ERROR);
+    return Sprite();
+  }
+
+  if (imgs.size() == 1 &&
+      static_cast<unsigned>(imgnumb) > imgs[0].w) {
+    DEBUG_MESSAGE(
+        "ERROR - Sprite image count exceeds image width.",
+        MESSAGE_TYPE::M_USER_ERROR);
+    return Sprite();
+  }
   
   unsigned cellwidth = ((imgs.size() > 1) ? imgs[0].w : imgs[0].w / imgnumb);
   Sprite ns(cellwidth, imgs[0].h, x_offset, y_offset);
