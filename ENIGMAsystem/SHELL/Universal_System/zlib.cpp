@@ -20,6 +20,7 @@
 #include "zlib.h"
 
 #include <string>
+#include <memory>
 #include <zlib.h>
 
 namespace enigma {
@@ -32,11 +33,18 @@ return nullptr;
 if (!inbuffer && actualsize > 0)
 return nullptr;
 
-uLongf outsize=compressBound(static_cast<uLong>(actualsize));
+ Bytef empty_input = 0;
+ const Bytef* input = inbuffer
+     ? reinterpret_cast<const Bytef*>(inbuffer)
+     : &empty_input;
 
-    Bytef* outbytef=new Bytef[outsize];
+ uLongf outsize = compressBound(static_cast<uLong>(actualsize));
 
-    int res=compress(outbytef,&outsize,(Bytef*)inbuffer,actualsize);
+ std::unique_ptr<Bytef[]> outbytef(new Bytef[outsize]);
+
+    int res=compress(outbytef.get(),&outsize,
+                     reinterpret_cast<const Bytef*>(inbuffer),
+                     static_cast<uLong>(actualsize));
 
     if (res != Z_OK)
     {
@@ -50,7 +58,7 @@ uLongf outsize=compressBound(static_cast<uLong>(actualsize));
      return nullptr;     
     }
 
-    return (unsigned char*)outbytef;
+    return reinterpret_cast<unsigned char*>(outbytef.release());
 }
 
 int zlib_decompress(unsigned char* inbuffer, int insize, int uncompresssize,unsigned char* outbytef)
@@ -64,9 +72,17 @@ return -4;
 if (!outbytef && uncompresssize > 0)
 return -4;
 
+ Bytef empty_input = 0;
+ Bytef empty_output = 0;
+ const Bytef* input = inbuffer
+     ? reinterpret_cast<const Bytef*>(inbuffer)
+     : &empty_input;
+ Bytef* output = outbytef ? reinterpret_cast<Bytef*>(outbytef)
+                          : &empty_output;
+
 uLongf outused=static_cast<uLongf>(uncompresssize);
 
-    switch(uncompress(outbytef,&outused,(Bytef*)inbuffer,
+    switch(uncompress(output,&outused,input,
 
     static_cast<uLong>(insize))){
 	case Z_OK:return outused;
