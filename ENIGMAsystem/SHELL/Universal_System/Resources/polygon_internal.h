@@ -19,8 +19,8 @@ namespace enigma
 	{
 		glm::vec2 a;
 		glm::vec2 b;
-		int i;
-		int j;
+        int i = -1;
+        int j = -1;
 	};
 
 	// The Polygon class represents the polygon that will be used

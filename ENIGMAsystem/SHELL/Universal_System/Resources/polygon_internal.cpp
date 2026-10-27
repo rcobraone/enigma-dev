@@ -28,8 +28,12 @@ namespace enigma
 
     // Constructor
     Polygon::Polygon(int size) 
+        : Polygon()
     {
-        // pass
+        if (size > 0) {
+            points.reserve(size);
+            offsetPoints.reserve(size);
+        }
     }
 
     // Parameterized Constructor 
@@ -176,12 +180,17 @@ namespace enigma
 
     void Polygon::copy(const glm::vec2* points, int size) 
     {
-        if (size > 0) {
-            this->points.clear();
-            for (int i = 0; i < size; ++i) {
-                this->points.push_back(points[i]);
-            }
-        }
+    this->points.clear();
+    this->offsetPoints.clear();
+
+    if (size <= 0)
+        return;
+
+    this->points.reserve(size);
+    this->offsetPoints.reserve(size);
+
+    for (int i = 0; i < size; ++i)
+        addPoint(points[i]);
     }
     
     void Polygon::print() 
@@ -249,8 +258,8 @@ namespace enigma
         glm::vec2 rotated(vector.x, vector.y);
         double x = rotated.x - pivot.x;
         double y = rotated.y - pivot.y;
-        rotated.x = ((x - pivot.x) * cos(angle) - (y - pivot.y) * sin(angle)) + pivot.x;
-        rotated.y = ((x - pivot.x) * sin(angle) + (y - pivot.y) * cos(angle)) + pivot.y;
+        rotated.x = x * cos(angle) - y * sin(angle) + pivot.x;
+        rotated.y = x * sin(angle) + y * cos(angle) + pivot.y;
         return rotated;
     }
 
@@ -264,16 +273,7 @@ namespace enigma
     double angleBetweenVectors(glm::vec2 vector1, glm::vec2 vector2)
     {
         glm::vec2 point(vector2.x - vector1.x, vector1.y - vector2.y);
-        double angle = glm::atan(point.y / point.x);
-        double quad = 1.5708;
-        if (point.x < 0 && point.y > 0) {
-            angle = 2 * quad + angle;
-        } else if (point.x < 0 && point.y < 0) {
-            angle += 2 * quad;
-        } else if (point.x > 0 && point.y < 0) {
-            angle = 4 * quad + angle;
-        }
-        return angle;
+        return glm::atan(point.y, point.x);
     }
 
     // Functions for computing tranformations on polygon points
@@ -337,7 +337,7 @@ namespace enigma
         if (points.size() >= 3) 
         {
             // Calculating normals
-            for (int i = 0; i < points.size() - 1; ++i) 
+            for (size_t i = 0; i + 1 < points.size(); ++i) 
             {
                 glm::vec2 currentNormal(
                     (points[i + 1].x) - (points[i].x),
@@ -363,8 +363,8 @@ namespace enigma
         std::vector<glm::vec2>::iterator it = points.begin();
         double min_x = DBL_MAX, 
                 min_y = DBL_MAX, 
-                max_x = DBL_MIN, 
-                max_y = DBL_MIN;
+                max_x = -DBL_MAX,
+                max_y = -DBL_MAX;
         
         while (it != points.end())
         {
