@@ -24,6 +24,8 @@
 #include "Platforms/General/fileio.h"
 
 #include <cstring>
+#include <new>
+#include <vector>
 
 namespace enigma_user {
   void sound_play(int sound);
@@ -52,25 +54,42 @@ namespace enigma
     // Fetch the highest ID we will be using
     int snd_highid;
     if (!fread_wrapper(&snd_highid,4,1,exe)) return;
+    if (sndcount < 0 || snd_highid < 0) return;
+    if (sndcount == 0) return;    
 
     for (int i = 0; i < sndcount; i++)
     {
       int id;
       if (!fread_wrapper(&id,4,1,exe)) return;
+      if (id < 0 || id > snd_highid) return;
 
       unsigned size;
       if (!fread_wrapper(&size,4,1,exe)) return;
 
-      char* fdata = new char[size];
-      const size_t read = fread_wrapper(fdata,1,size,exe);
-      if (read != size) { delete[] fdata; return; }
-         delete[] fdata;
-         return;
+      std::vector<char> fdata;
+      try {
+        fdata.resize(size);
+      } catch (const std::bad_alloc&) {
+        DEBUG_MESSAGE("Failed to load sound: Cannot allocate enough memory",
+                      MESSAGE_TYPE::M_ERROR);
+        return;
+      } catch (const std::length_error&) {
+        DEBUG_MESSAGE("Failed to load sound: Invalid data size",
+                      MESSAGE_TYPE::M_ERROR);
+        return;
       }
 
-      int e = sound_add_from_buffer(id,fdata,size);
+
+      const size_t read = fread_wrapper(fdata.data(),1,size,exe);
+      if (read != size) {
+        DEBUG_MESSAGE("Failed to load sound: Data is truncated",
+                      MESSAGE_TYPE::M_ERROR);
+        return;
+      }
+
+      int e = sound_add_from_buffer(id, fdata.data(), size);
       if (e) DEBUG_MESSAGE("Failed to load sound " + std::to_string(i) + " error " + std::to_string(e), MESSAGE_TYPE::M_ERROR);
-      delete[] fdata;
+
     }
   }
 }
