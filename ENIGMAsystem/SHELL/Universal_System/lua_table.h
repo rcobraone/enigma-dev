@@ -123,10 +123,18 @@ template <class T> struct lua_table {
   }
 
   T& operator*() {
+    if (dense.empty())
+      upsize(1);
     return dense[0];
   }
 
   const T& operator*() const {
+    if (dense.empty()) {
+      const auto it = sparse.find(0);
+      if (it != sparse.end())
+        return it->second;
+      return sentinel;
+    }	  
     return dense[0];
   }
 
