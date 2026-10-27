@@ -41,21 +41,25 @@ namespace enigma
     //Note: If a map lookup each tick is a performance hit, this value can be cached in the object itself with a tuple <timeline_id, timeline_pos, next_moment_iterator>
     if (timeline_index<0 || timeline_index>=(int)timeline_moments_maps.size()) { return; }
 
+    if (timeline_speed == 0)
+     return;
     //Algorithm varies for +/- speed. Assume zero is positive (just for consistency).
     //Note that we *cannot* call these events as they are found, because they might change timeline_position (and GM does not work that way).
-    std::vector<int> moment_ids;
-    if (timeline_speed>=0) { //Positive
+      const double speed = timeline_speed;
+      double remaining = speed;
+
+      std::vector<int> moment_ids;
+      if (speed>=0) { //Positive
       std::map<int, int>::const_iterator next = timeline_moments_maps[timeline_index].lower_bound(ceil(timeline_position));
 
       //We now advance the timeline_position by timeline_speed, saving event information on the way.
-      while (timeline_speed!=0) {
+      while (remaining!=0) {
         //Landing *exactly* on the next moment will actually trigger it *next* turn.
-        if (next==timeline_moments_maps[timeline_index].end() || timeline_position+timeline_speed<=next->first) {
-           timeline_position += timeline_speed;
+        if (next==timeline_moments_maps[timeline_index].end() || timeline_position+remaining<=next->first) {
+           timeline_position += remaining;
            break;
         }
-        timeline_speed -= next->first - timeline_position;
-        timeline_position = next->first;
+        remaining -= next->first - timeline_position;
         moment_ids.push_back(next->second);
         next++;
       }
@@ -65,14 +69,13 @@ namespace enigma
       std::map<int, int>::const_reverse_iterator next = std::reverse_iterator<std::map<int, int>::const_iterator>(nextTEMP);
 
       //The algorithm proceeds as in FWD, but with rev_iterators (so it's hard to share code).
-      while (timeline_speed!=0) {
+      while (remaining!=0) {
         //Landing *exactly* on the next moment will actually trigger it *next* turn.
-        if (next==timeline_moments_maps[timeline_index].rend() || timeline_position+timeline_speed>=next->first) {
-           timeline_position += timeline_speed;
+        if (next==timeline_moments_maps[timeline_index].rend() || timeline_position+remaining>=next->first) {
+           timeline_position += remaining;
            break;
         }
-        timeline_speed += timeline_position - next->first;
-        timeline_position = next->first;
+        remaining += timeline_position - next->first;
         moment_ids.push_back(next->second);
         next++;
       }
@@ -88,6 +91,12 @@ namespace enigma
   {
     //Determine if we're past the last event. Note that no residual movement carries over; this effectively "resets to 0".
     if (timeline_index<0 || timeline_index>=(int)timeline_moments_maps.size()) { return; }
+
+    if (timeline_moments_maps[timeline_index].empty()) {
+      timeline_position = 0;
+      return;
+    }
+
     if (timeline_speed>=0) { //Positive
       if (timeline_position > timeline_moments_maps[timeline_index].rbegin()->first) { //If ==, it will trigger on the next time tick.
         timeline_position = 0;
