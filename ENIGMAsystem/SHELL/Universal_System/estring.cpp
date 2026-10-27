@@ -93,6 +93,7 @@ bool is_base64(unsigned char c) {
 string base64_encode(string const& str) {
   size_t in_len = str.size();
   string ret;
+  ret.reserve(((in_len + 2) / 3) * 4);
   int i = 0;
   int j = 0;
   int in_ = 0;
@@ -141,6 +142,7 @@ string base64_decode(string const& str) {
   int in_ = 0;
   unsigned char char_array_4[4], char_array_3[3];
   string ret;
+  ret.reserve((in_len / 4) * 3);
 
   while (in_len-- && ( str[in_] != '=') && is_base64(str[in_])) {
     char_array_4[i++] = str[in_]; in_++;
@@ -264,7 +266,10 @@ string string_char_at(string str,int index) {
 }
 
 string string_delete(string str,int index,int count) {
-  return str.erase(index < 2? 0: index-1, count < 1? 0: count);
+  const size_t pos = index < 2 ? 0 : static_cast<size_t>(index - 1);
+  if (pos > str.length())
+    return str;
+  return str.erase(pos, count < 1 ? 0 : static_cast<size_t>(count));
 }
 
 string string_insert(string substr,string str,int index) {
@@ -311,7 +316,11 @@ string string_upper(string str) {
 string string_repeat(string str,int count) {
   if (count <= 0 || str.empty())
    return "";
-  string ret; ret.reserve(str.length() * count);
+  string ret;
+  const size_t repetitions = static_cast<size_t>(count);
+  if (str.length() > ret.max_size() / repetitions)
+    return "";
+  ret.reserve(str.length() * repetitions);
   for(int i = count; i; i--) ret.append(str);
   return ret;
 }
@@ -399,10 +408,15 @@ string filename_ext(string fname)
 
 string filename_change_ext(string fname, string newext)
 {
-  size_t fp = fname.find_last_of(".");
-  if (fp == string::npos)
+  const size_t separator = fname.find_last_of("/\\");
+  const size_t dot = fname.find_last_of('.');
+
+  // A dot in a directory name is not a file extension.
+  if (dot == string::npos ||
+      (separator != string::npos && dot < separator))
     return fname + newext;
-  return fname.replace(fp,fname.length(),newext);
+
+  return fname.replace(dot, fname.length() - dot, newext);
 }
 
 var string_split(const std::string &str, const std::string &delim,
