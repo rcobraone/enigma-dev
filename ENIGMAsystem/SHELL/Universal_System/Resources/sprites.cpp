@@ -26,6 +26,7 @@
 
 #include <string>
 #include <limits>
+#include <cstring>
 
 using enigma::Sprite;
 using enigma::sprites;
@@ -271,7 +272,14 @@ var sprite_get_uvs(int ind, int subimg) {
   var uvs;
   uvs[4] = 0;
 
-  const enigma::Subimage& s = sprites.get(ind).GetSubimage(subimg);
+  if (!sprites.exists(ind))
+    return uvs;
+
+  const enigma::Sprite& spr = sprites.get(ind);
+  if (subimg < 0 || size_t(subimg) >= spr.SubimageCount())
+    return uvs;
+
+  const enigma::Subimage& s = spr.GetSubimage(subimg);
 
   uvs[0] = s.textureBounds.left();
   uvs[1] = s.textureBounds.top();
@@ -319,7 +327,15 @@ int sprite_create_color(unsigned w, unsigned h, int col) {
   }
 
   RawImage img(new unsigned char[pixels * 4], w, h);
-  std::fill((unsigned*)(img.pxdata), (unsigned*)(img.pxdata) + w * h, (COL_GET_R(col) | (COL_GET_G(col) << 8) | (COL_GET_B(col) << 16) | 255 << 24));
+  const unsigned pixel =
+      COL_GET_R(col) | (COL_GET_G(col) << 8) |
+      (COL_GET_B(col) << 16) | (255u << 24);
+
+  // Copy the pixel representation without writing through an aliased
+  // unsigned pointer into storage allocated as unsigned char[].
+  for (size_t i = 0; i < pixels; ++i) {
+    std::memcpy(img.pxdata + i * 4, &pixel, sizeof(pixel));
+  }
 
   Sprite s(w, h, 0, 0);
   s.SetBBox(0, 0, w, h);
