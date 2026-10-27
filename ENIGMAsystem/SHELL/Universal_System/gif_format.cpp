@@ -197,20 +197,38 @@ unsigned int readBits2(unsigned char* bytes, size_t& pos, const size_t size, uns
 
 unsigned char* read_entire_file(const char* filename, size_t& size) 
 {
+  size = 0;
   std::ifstream input(filename, std::ios::binary|std::ios::ate);
-  if (input.good()) {
-    const std::streampos end = input.tellg();
-    if (end < 0) {
-      return nullptr;
-    }
-
-    size = static_cast<size_t>(end);
-    unsigned char* bytes = new unsigned char[size];
-    input.seekg(0, std::ios::beg);
-    input.read(reinterpret_cast<char*>(bytes), size);
-    if (input) { return bytes; }
+  if (!input.good()) {
+    return nullptr;
   }
   return 0;
+  const std::streampos end = input.tellg();
+  if (end < 0 ||
+      static_cast<uintmax_t>(end) >
+          static_cast<uintmax_t>((std::numeric_limits<size_t>::max)()) ||
+      static_cast<uintmax_t>(end) >
+          static_cast<uintmax_t>((std::numeric_limits<std::streamsize>::max)())) {
+    return nullptr;
+  }
+
+  size = static_cast<size_t>(end);
+  std::unique_ptr<unsigned char[]> bytes(new unsigned char[size]);
+  input.seekg(0, std::ios::beg);
+  if (!input) {
+    size = 0;
+    return nullptr;
+  }
+
+  if (size != 0) {
+    input.read(reinterpret_cast<char*>(bytes.get()),
+                static_cast<std::streamsize>(size));
+  }
+  if (!input) {
+    size = 0;
+    return nullptr;
+  }
+  return bytes.release();
 }
 
 
