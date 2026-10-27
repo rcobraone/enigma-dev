@@ -28,6 +28,8 @@
 #include "Platforms/General/fileio.h"
 
 #include <cstring>
+#include <limits>
+#include <new>
 
 namespace enigma
 {
@@ -49,13 +51,21 @@ namespace enigma
     if (!fread_wrapper(&bkg_highid,4,1,exe))
       return;
     
+    if (bkgcount < 0 || bkg_highid < 0 ||
+        bkg_highid == (std::numeric_limits<int>::max)())
+      return;
     if (bkgcount == 0) return;
+    if (bkgcount > bkg_highid + 1)
+      return;
+    
     backgrounds.resize(bkg_highid+1);
 
     for (int i = 0; i < bkgcount; i++)
     {
       int unpacked;
       if (!fread_wrapper(&bkgid, 4,1,exe)) return;
+      if (bkgid > static_cast<unsigned int>(bkg_highid))
+        return;
       if (!fread_wrapper(&width, 4,1,exe)) return;
       if (!fread_wrapper(&height,4,1,exe)) return;
       if (!fread_wrapper(&transparent,4,1,exe)) return;
@@ -76,18 +86,22 @@ namespace enigma
       if (pixel_count > std::numeric_limits<size_t>::max() / 4)
         return;
       const size_t unpacked_size = pixel_count * 4;
-      if (unpacked_size > std::numeric_limits<unsigned>::max())
+      if (unpacked_size > static_cast<size_t>((std::numeric_limits<int>::max)()))
         return;
       unpacked = static_cast<int>(unpacked_size);
 
       unsigned int size;
       if (!fread_wrapper(&size,4,1,exe)) return;
       
-      unsigned char* cpixels=new unsigned char[size+1];
+      if (static_cast<size_t>(size) ==
+          (std::numeric_limits<size_t>::max)())
+        return;
+      unsigned char* cpixels =
+          new (std::nothrow) unsigned char[static_cast<size_t>(size) + 1];
       if (!cpixels)
       {
         DEBUG_MESSAGE("Failed to load background: Cannot allocate enough memory " + enigma_user::toString(unpacked), MESSAGE_TYPE::M_ERROR);
-        break;
+        return;
       }
       unsigned int sz2=fread_wrapper(cpixels,1,size,exe);
       if (size!=sz2) {
@@ -95,7 +109,13 @@ namespace enigma
         delete[] cpixels;        
         return;
       }
-      unsigned char* pixels=new unsigned char[unpacked+1];
+      unsigned char* pixels =
+          new (std::nothrow) unsigned char[
+              static_cast<size_t>(unpacked) + 1];
+      if (!pixels) {
+        delete[] cpixels;
+        return;
+      }
       if (zlib_decompress(cpixels,size,unpacked,pixels) != unpacked)
       {
         DEBUG_MESSAGE("Background load error: Background does not match expected size", MESSAGE_TYPE::M_ERROR);
