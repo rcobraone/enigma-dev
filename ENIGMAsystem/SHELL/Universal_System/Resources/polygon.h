@@ -6,8 +6,7 @@
 #define ENIGMA_POLYGON_H
 
 #include "Universal_System/scalar.h"
-#include "Universal_System/var4.h"
-#include <string>
+
 
 namespace enigma_user {
 	int polygon_add(int height, int width);

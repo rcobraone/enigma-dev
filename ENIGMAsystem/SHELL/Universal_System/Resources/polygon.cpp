@@ -4,7 +4,7 @@
 
 #include "polygon_internal.h"
 #include "Graphics_Systems/General/GSstdraw.h"
-#include <string>
+#include <utility>
 
 using enigma::Polygon;
 using enigma::polygons;
