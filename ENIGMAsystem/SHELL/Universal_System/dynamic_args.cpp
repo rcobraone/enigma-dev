@@ -39,11 +39,11 @@ varargs::varargs(const varargs& other):
     argc(other.argc),
     argv(new vector<variant>(v(other.argv))) {}
 
-varargs::varargs(varargs&& other) noexcept:
-    argc(other.argc),
-    argv(other.argv) {
-  other.argc = 0;
-  other.argv = new vector<variant>;
+varargs::varargs(varargs&& other):
+    argc(0),
+    argv(new vector<variant>) {
+  std::swap(argc, other.argc);
+  std::swap(argv, other.argv);
 }
 
 varargs& varargs::operator=(const varargs& other) {
@@ -55,14 +55,17 @@ varargs& varargs::operator=(const varargs& other) {
   return *this;
 }
 
-varargs& varargs::operator=(varargs&& other) noexcept {
+varargs& varargs::operator=(varargs&& other) {
   if (this == &other)
     return *this;
+
+  // Allocate the replacement before changing ownership.
+  vector<variant>* empty = new vector<variant>;   
   delete (vector<variant>*)argv;
   argv = other.argv;
   argc = other.argc;
   other.argc = 0;
-  other.argv = new vector<variant>;
+  other.argv = empty;
   return *this;
 }
 

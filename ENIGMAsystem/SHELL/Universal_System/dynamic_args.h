@@ -42,9 +42,9 @@ namespace enigma {
     varargs();
     varargs(variant);
     varargs(const varargs&);
-    varargs(varargs&&) noexcept;
+    varargs(varargs&&);
     varargs& operator=(const varargs&);
-    varargs& operator=(varargs&&) noexcept;    
+    varargs& operator=(varargs&&);    
     ~varargs();
     #endif
   };
