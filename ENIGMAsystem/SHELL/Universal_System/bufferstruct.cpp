@@ -123,7 +123,11 @@ int buffer_create(unsigned size, int type, unsigned alignment) {
   buffer->type = type;
   buffer->alignment = alignment;
   int id = enigma::get_free_buffer();
-  enigma::buffers.insert(enigma::buffers.begin() + id, buffer);
+  if (static_cast<size_t>(id) < enigma::buffers.size()) {
+    enigma::buffers[static_cast<size_t>(id)] = buffer;
+  } else {
+    enigma::buffers.push_back(buffer);
+  };
   return id;
 }
 
@@ -145,54 +149,56 @@ void buffer_copy(int src_buffer, unsigned src_offset, unsigned size, int dest_bu
   if (dest_offset > dstbuff->GetSize())
     return;
 
-  const unsigned src_size = srcbuff->GetSize();
-  const unsigned available = src_size - src_offset;
-  const unsigned over = size > available ? size - available : 0;
-  switch (dstbuff->type) {
-    case buffer_wrap:
-      if (srcbuff == dstbuff) {
-        const unsigned copy_size = size - over;
-        std::vector<unsigned char> temp(
-            srcbuff->data.begin() + src_offset,
-            srcbuff->data.begin() + src_offset + copy_size);
-        dstbuff->data.insert(dstbuff->data.begin() + dest_offset,
-                             temp.begin(), temp.end());
-      } else {
-        dstbuff->data.insert(dstbuff->data.begin() + dest_offset,
-                             srcbuff->data.begin() + src_offset,
-                             srcbuff->data.begin() + src_offset + size - over);
-      }
-      dstbuff->data.insert(dstbuff->data.begin() + dest_offset, srcbuff->data.begin(), srcbuff->data.begin() + over);
-      break;
-    case buffer_grow:
-      if (srcbuff == dstbuff) {
-        const unsigned copy_size = size - over;
-        std::vector<unsigned char> temp(
-            srcbuff->data.begin() + src_offset,
-            srcbuff->data.begin() + src_offset + copy_size);
-        dstbuff->data.insert(dstbuff->data.begin() + dest_offset,
-                             temp.begin(), temp.end());
-      } else {
-        dstbuff->data.insert(dstbuff->data.begin() + dest_offset,
-                             srcbuff->data.begin() + src_offset,
-                             srcbuff->data.begin() + src_offset + size - over);
-      }
-      break;
-    default:
-      if (srcbuff == dstbuff) {
-        const unsigned copy_size = size - over;
-        std::vector<unsigned char> temp(
-            srcbuff->data.begin() + src_offset,
-            srcbuff->data.begin() + src_offset + copy_size);
-        dstbuff->data.insert(dstbuff->data.begin() + dest_offset,
-                             temp.begin(), temp.end());
-      } else {
-        dstbuff->data.insert(dstbuff->data.begin() + dest_offset,
-                             srcbuff->data.begin() + src_offset,
-                             srcbuff->data.begin() + src_offset + size - over);
-      }
-      break;
+  const size_t src_size = srcbuff->data.size();
+  const size_t dst_size = dstbuff->data.size();
+  if (size == 0 || src_size == 0)
+    return;
+
+  const bool wrap = dstbuff->type == buffer_wrap;
+  const size_t available = src_size - src_offset;
+  const size_t copy_size = wrap ? size : std::min<size_t>(size, available);
+  if (copy_size == 0)
+    return;
+
+  // Snapshot the source first; this also handles overlapping self-copies.
+  std::vector<unsigned char> temp;
+  temp.reserve(copy_size);
+  for (size_t i = 0; i < copy_size; ++i) {
+    const size_t source_index =
+        wrap ? (static_cast<size_t>(src_offset) + i) % src_size
+             : static_cast<size_t>(src_offset) + i;
+    temp.push_back(srcbuff->data[source_index]);
   }
+
+  if (wrap) {
+    if (dst_size == 0)
+      return;
+    for (size_t i = 0; i < copy_size; ++i)
+      dstbuff->data[(static_cast<size_t>(dest_offset) + i) % dst_size] = temp[i];
+    return;
+  }
+
+    if (dstbuff->type == buffer_grow) {
+    if (copy_size > std::numeric_limits<size_t>::max() - dest_offset)
+      return;
+
+    const size_t required_size = static_cast<size_t>(dest_offset) + copy_size;
+    if (required_size > dstbuff->data.max_size())
+      return;
+ 
+    if (required_size > dstbuff->data.size())
+      dstbuff->data.resize(required_size, 0);
+
+  } else {
+    if (dest_offset >= dstbuff->data.size())
+      return;
+
+  }
+
+  const size_t writable =
+      std::min(copy_size, dstbuff->data.size() - dest_offset);
+
+  std::copy_n(temp.begin(), writable, dstbuff->data.begin() + dest_offset);
 }
 
 void buffer_save(int buffer, string filename) {
@@ -268,7 +274,6 @@ int buffer_load(string filename) {
   buffer->type = buffer_grow;
   buffer->alignment = 1;
   int id = enigma::get_free_buffer();
-  enigma::buffers.insert(enigma::buffers.begin() + id, buffer);
   std::ifstream myfile(filename.c_str(), std::ios::binary);
   if (!myfile.is_open()) {
     DEBUG_MESSAGE("Unable to open file " + filename, MESSAGE_TYPE::M_ERROR);
@@ -287,18 +292,27 @@ int buffer_load(string filename) {
 
   buffer->data.resize(static_cast<size_t>(file_size));
   myfile.seekg(0, std::ios::beg);
-  if (file_size > 0)
+  if (file_size > 0) {
     myfile.read(reinterpret_cast<char*>(buffer->data.data()), file_size);
+    if (!myfile) {
+      myfile.close();
+      delete buffer;
+      return -1;
+    }
+  }    
   myfile.close();
-  enigma::buffers.insert(enigma::buffers.begin() + id, buffer);
+  if (static_cast<size_t>(id) < enigma::buffers.size()) {
+    enigma::buffers[id] = buffer;
+  } else {
+    enigma::buffers.push_back(buffer);
+  }
 
   return id;
 }
 
 void buffer_load_ext(int buffer, string filename, unsigned offset) {
   get_buffer(binbuff, buffer);
-  if (offset > binbuff->GetSize() &&
-      binbuff->type != buffer_grow)
+  if (offset > binbuff->GetSize())
     return;
 
   std::ifstream myfile(filename.c_str(), std::ios::binary);
@@ -318,28 +332,27 @@ void buffer_load_ext(int buffer, string filename, unsigned offset) {
 
   data.resize(static_cast<size_t>(file_size));
   myfile.seekg(0, std::ios::beg);
-  if (file_size > 0)
+  if (file_size > 0) {
     myfile.read(data.data(), file_size);
-  const size_t buffer_size = binbuff->GetSize();
-  const size_t data_size = data.size();
-  const size_t available = buffer_size - offset;
-  const size_t over =
-      data_size > available ? data_size - available : 0;
-  switch (binbuff->type) {
-    case buffer_wrap:
-      binbuff->data.insert(binbuff->data.begin() + offset, data.begin(), data.end() - over);
-      binbuff->data.insert(binbuff->data.begin(), data.begin(), data.begin() + over);
-      break;
-    case buffer_grow:
-      binbuff->data.insert(binbuff->data.begin() + offset, data.begin(), data.end());
-      break;
-    default:
-      binbuff->data.insert(binbuff->data.begin() + offset, data.begin(), data.end() - over);
-      break;
+    if (!myfile) {
+      myfile.close();
+      return;
+    }
+  }
+  myfile.close();
+  
+   // A grow buffer may be extended to the requested offset.
+  // Do not calculate buffer_size - offset before validating the offset.
+  if (binbuff->type == buffer_grow && offset > binbuff->data.size()) {
+    binbuff->data.resize(static_cast<size_t>(offset));
   }
 
-  myfile.close();
-}
+  const size_t buffer_size = binbuff->data.size();
+  if (static_cast<size_t>(offset) > buffer_size) {
+    return;
+  }
+
+
 
 void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned size) {
   get_buffer(binbuff, buffer);
