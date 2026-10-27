@@ -36,9 +36,9 @@ namespace enigma
   extern size_t script_idmax;
   void map_resource_ids(nameid_pair* n)
   {
-    for (nameid_pair* i = n; i->id != -1; i++)
+    for (nameid_pair* i = n; i->id != -1; ++i)
     {
-      //TODO: IMPLEMENT
+      resources[i->name] = i->id;
     }
   }
 }
@@ -48,7 +48,11 @@ namespace enigma_user
 
 int resource_get_id(string name)
 {
-  return -1;
+  const auto it = resources.find(name);
+  if (it == resources.end())
+    return -1;
+
+  return it->second;
 }
 
 variant script_execute(int scr, variant arg0, variant arg1, variant arg2, variant arg3, variant arg4, variant arg5, variant arg6, variant arg7, variant arg8, variant arg9, variant arg10, variant arg11, variant arg12, variant arg13, variant arg14, variant arg15)
