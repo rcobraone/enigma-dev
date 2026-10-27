@@ -236,9 +236,9 @@ struct variant_string_wrapper : std::string {
   const std::string &sval() const { return *this; }
   variant_string_wrapper() {}
   variant_string_wrapper(std::string const      &x): std::string(x) {}
-  variant_string_wrapper(std::string rvalue_ref  x): std::string(x) {}
+  variant_string_wrapper(std::string rvalue_ref  x): std::string(std::move(x)) {}
   std::string rvalue_ref release_sval() {
-    return std::move(*(std::string*) this);
+    return std::move(static_cast<std::string&>(*this));
   }
 };
 
@@ -359,7 +359,7 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
       type(ty_string) {}
   variant(std::string rvalue_ref str):
       enigma::variant_real_union(0.),
-      enigma::variant_string_wrapper(str),
+      enigma::variant_string_wrapper(std::move(str)),
       type(ty_string) {}
 
   // Assignment operators
