@@ -26,6 +26,8 @@
 
 #include <cstring>
 #include <string>
+#include <limits>
+#include <new>
 
 using enigma_user::toString;
 
@@ -44,17 +46,23 @@ namespace enigma
     // Determine how many sprites we have
     int sprcount;
     if (!fread_wrapper(&sprcount,4,1,exe)) return;
+    if (sprcount < 0) return;
 
     // Fetch the highest ID we will be using
     int spr_highid;
     if (!fread_wrapper(&spr_highid,4,1,exe)) return;
+    if (spr_highid < 0 ||
+        spr_highid == (std::numeric_limits<int>::max)()) return;
 
     if (sprcount == 0) return;
+    if (static_cast<unsigned int>(sprcount) >
+        static_cast<unsigned int>(spr_highid) + 1u) return;
     sprites.resize(spr_highid+1);
 
     for (int i = 0; i < sprcount; i++)
     {
       if (!fread_wrapper(&sprid, 4,1,exe)) return;
+      if (sprid > static_cast<unsigned int>(spr_highid)) return;
       if (!fread_wrapper(&width, 4,1,exe)) return;
       if (!fread_wrapper(&height,4,1,exe)) return;
       if (!fread_wrapper(&xorig, 4,1,exe)) return;
@@ -88,13 +96,15 @@ namespace enigma
       {
         int unpacked;
         if (!fread_wrapper(&unpacked,4,1,exe)) return;
+        if (unpacked < 0) return;
         unsigned int size;
         if (!fread_wrapper(&size,4,1,exe)) return; //co//ut << "Alloc size: " << size << endl;
-        unsigned char* cpixels=new unsigned char[size+1];
+        if (size == (std::numeric_limits<unsigned int>::max)()) return;
+        unsigned char* cpixels = new (std::nothrow) unsigned char[static_cast<size_t>(size) + 1
         if (!cpixels)
         {  //FIXME: Uncomment these when tostring is available
           DEBUG_MESSAGE("Failed to load sprite: Cannot allocate enough memory "+ toString(unpacked), MESSAGE_TYPE::M_ERROR);
-          break;
+          return;
         }
         unsigned int sz2=fread_wrapper(cpixels,1,size,exe);
         if (size!=sz2) {
@@ -108,7 +118,17 @@ namespace enigma
           delete[] cpixels;
           return;
         }
-        unsigned char* pixels=new unsigned char[unpacked+1];
+        const size_t unpacked_size = static_cast<size_t>(unpacked);
+        if (unpacked_size == (std::numeric_limits<size_t>::max)()) {
+          delete[] cpixels;
+          return;
+        }
+        unsigned char* pixels =
+            new (std::nothrow) unsigned char[unpacked_size + 1];
+        if (!pixels) {
+          delete[] cpixels;
+          return;
+        }
         if (zlib_decompress(cpixels,size,unpacked,pixels) != unpacked)
         {
           DEBUG_MESSAGE("Sprite load error: Sprite does not match expected size", MESSAGE_TYPE::M_ERROR);
