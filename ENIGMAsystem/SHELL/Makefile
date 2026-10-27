@@ -109,7 +109,7 @@ print_flags:
 	@echo "CXXFLAGS=\"$(CXXFLAGS) $(CPPFLAGS) $(INCLUDES)\""
 	@echo "CFLAGS=\"$(CFLAGS) $(CPPFLAGS)\""
 	@echo "LDFLAGS=\"$(LDFLAGS)\""
-	@echo "LDLIBS=\"$(LDIBS)\""
+	 @echo "LDLIBS=\"$(LDLIBS)\""
 	@echo -e "################################################\n"
 
 clean:
@@ -157,7 +157,7 @@ write_src_files:
 	@echo "$(CXXFLAGS) $(CPPFLAGS)" > $(WORKDIR)/cxxflags.in
 	@echo "$(CFLAGS)" > $(WORKDIR)/cflags.in
 	@echo "$(ANDROID_SHARED_LIBRARIES)" > $(WORKDIR)/libs.in
-	@echo "$(ANDROIS_LDLIBS)" > $(WORKDIR)/ldlibs.in
+	@echo "$(ANDROID_LDLIBS)" > $(WORKDIR)/ldlibs.in
 	@echo "$(ANDROID_MAKEFILES)" > $(WORKDIR)/makefiles.in
 	@cat ../../android/enigma/build.gradle.template | sed -e 's/%ANDROID_API_LEVEL%/$(ANDROID_API_LEVEL)/g' | sed -e 's/%ANDROID_NDK_VERSION%/$(ANDROID_NDK_VERSION)/g' > ../../android/enigma/build.gradle
 
