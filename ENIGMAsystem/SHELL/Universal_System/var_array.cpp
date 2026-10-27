@@ -28,6 +28,7 @@
 #include "var_array.h"
 #include "var4.h"
 #include <cstdint>
+#include <vector>
 
 namespace enigma_user {
 
@@ -45,6 +46,19 @@ void array_copy(var& dest, size_t dest_index, const var& src, size_t src_index, 
       (length - 1 > SIZE_MAX - dest_index ||
        length - 1 > SIZE_MAX - src_index))
     return;
+
+  // Preserve the original source values when copying within one array.
+  if (&dest == &src) {
+    std::vector<variant> temp;
+    temp.reserve(length);
+    for (size_t i = 0; i < length; ++i)
+      temp.push_back(src[src_index + i]);
+
+    for (size_t i = 0; i < length; ++i)
+      dest[dest_index + i] = temp[i];
+    return;
+  }
+     
   for (size_t i = 0; i < length; ++i) {
     dest[dest_index + i] = src[src_index + i];
   }
