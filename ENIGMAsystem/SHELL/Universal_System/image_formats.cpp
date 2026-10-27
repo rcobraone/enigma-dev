@@ -452,8 +452,17 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
   const uint64_t bytes_per_pixel = bmp_info.bitsPerPixel / 8;
   const uint64_t row_bytes =
       static_cast<uint64_t>(bmp_info.width) * bytes_per_pixel;
+  if (row_bytes > UINT64_MAX - 3u) {
+    fprintf(stderr, "Invalid bitmap row size\n");
+    return imgs;
+  }      
   const uint64_t padded_row_bytes =
       (row_bytes + 3u) & ~uint64_t(3u);
+  if (bmp_info.height != 0 &&
+      padded_row_bytes > UINT64_MAX / bmp_info.height) {
+    fprintf(stderr, "Invalid bitmap dimensions\n");
+    return imgs;
+  }      
   const uint64_t pixel_data_size =
       padded_row_bytes * static_cast<uint64_t>(bmp_info.height);
 
@@ -462,6 +471,14 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
     fprintf(stderr, "Truncated bitmap data\n");
     return imgs;
   }
+  if (bmp_info.height != 0 &&
+      static_cast<uint64_t>(bmp_info.width) >
+          static_cast<uint64_t>(SIZE_MAX) / bmp_info.height / 4u) {
+    fprintf(stderr, "Bitmap dimensions exceed addressable memory\n");
+    return imgs;
+  }
+  const size_t output_size =
+      static_cast<size_t>(bmp_info.width) * bmp_info.height * 4u;
   
   bool rgba = bmp_info.isRGBA();
   bool argb = bmp_info.isARGB();
@@ -478,7 +495,7 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
   auto &img = imgs.emplace_back();
   img.w = bmp_info.width;
   img.h = bmp_info.height;
-  img.pxdata = bitmap = new unsigned char[img.w * img.h * 4](); // Initialize to 0.
+  img.pxdata = bitmap = new unsigned char[output_size](); // Initialize to 0.
 
   // Calculate the number of nulls that follows each line.
   const int overlap = bmp_info.width * (bmp_info.bitsPerPixel / 8) % 4;
@@ -488,7 +505,7 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
   const char *bmp_it = image_data.data() + bmp_file.dataStart;
 
   for (unsigned ih = 0; ih < bmp_info.height; ih++) {
-    unsigned tmp = (bmp_info.height - 1 - ih) * bmp_info.width * 4;
+    size_t tmp = static_cast<size_t>(bmp_info.height - 1 - ih) * bmp_info.width * 4u;
     for (unsigned iw = 0; iw < bmp_info.width; iw++) {
       if (bmp_info.bitsPerPixel == 24) {
         bitmap[tmp+0] = *bmp_it++;

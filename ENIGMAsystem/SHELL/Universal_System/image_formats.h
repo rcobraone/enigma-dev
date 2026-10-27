@@ -19,6 +19,10 @@
 #ifndef ENIGMA_IMAGEFORMATS_H
 #define ENIGMA_IMAGEFORMATS_H
 
+#include <cstddef>
+#include <cstdint>
+#include <new>
+#include <string>
 #include <vector>
 #include <filesystem>
 #include <limits>
@@ -47,7 +51,7 @@ struct RawImage {
     if (pixels > std::numeric_limits<size_t>::max() / 4u)
       throw std::bad_alloc();
 
-    const size_t size = pixels * 4u;;
+    const size_t size = pixels * 4u;
 
     unsigned char* new_pxdata = new unsigned char[size];
     delete[] pxdata;
@@ -61,7 +65,11 @@ struct RawImage {
 
 struct Color {
   uint8_t b, g, r, a;
-  uint32_t asInt() { return (b << 24) | (g << 16) | (r << 8) | a;  }
+  uint32_t asInt() const {
+    return (static_cast<uint32_t>(b) << 24) |
+           (static_cast<uint32_t>(g) << 16) |
+           (static_cast<uint32_t>(r) << 8)  | static_cast<uint32_t>(a);
+  }
 };
 
 /// Color formats
