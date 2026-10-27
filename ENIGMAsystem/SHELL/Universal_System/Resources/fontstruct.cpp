@@ -207,9 +207,13 @@ namespace enigma
 
 fontglyph findGlyph(const SpriteFont& fnt, uint32_t character) {
   for (size_t i = 0; i < fnt.glyphRanges.size(); i++) {
-    fontglyphrange fgr = fnt.glyphRanges[i];
-    if (character >= fgr.glyphstart && character < fgr.glyphstart + fgr.glyphs.size()) {
-      return fgr.glyphs[character - fgr.glyphstart];
+    const fontglyphrange& fgr = fnt.glyphRanges[i];
+    if (character < fgr.glyphstart)
+      continue;
+
+    const uint32_t offset = character - fgr.glyphstart;
+    if (static_cast<size_t>(offset) < fgr.glyphs.size()) {
+      return fgr.glyphs[offset];
     }
   }
   return fontglyph();
