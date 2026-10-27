@@ -52,6 +52,7 @@ void exe_loadfonts(FILE_t* exe) {
   sprite_fonts.resize(rawfontmaxid+1);
 
   for (int rf = 0; rf < rawfontcount; rf++) {
+	if (!fread_wrapper(&fntid, 4, 1, exe)) return;
     // int unpacked;
     if (fntid < 0 || fntid > rawfontmaxid) {
      DEBUG_MESSAGE("Invalid font resource id.", MESSAGE_TYPE::M_ERROR);
@@ -79,9 +80,6 @@ void exe_loadfonts(FILE_t* exe) {
     if (!fread_wrapper(mono, sizeof(char), size, exe)) {
      delete[] mono;
     return;
-    }
-    delete[] mono;
-     return;
     }
     
     unsigned char* pixels = mono_to_rgba(mono, twid, thgt);
