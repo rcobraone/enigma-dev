@@ -22,24 +22,31 @@
 #include "reflexive_types.h"
 #include "math_consts.h"
 
+namespace {
+constexpr double kPi = 3.14159265358979323846;
+}
+
 // Variable not zero.
-inline bool varnz(double x) { return fabs(x) > variant::epsilon; }
+inline bool varnz(double x) { return std::fabs(x) > variant::epsilon; }
 
 namespace enigma {
   //Make direction work
   void directionv::function(const variant&) {
+    if (!std::isfinite(rval.d)) {
+      return;
+    }
     rval.d = fmod(rval.d, 360.0);
     if(rval.d < 0.0){
       rval.d += 360.0;
     }
-    *hspd = *spd * cos(rval.d*M_PI/180.0);
-    *vspd = *spd *-sin(rval.d*M_PI/180.0);
+    *hspd = *spd * std::cos(rval.d * kPi / 180.0);
+    *vspd = *spd * -std::sin(rval.d * kPi / 180.0);
   }
 
   //Make speed work -- same as above, but rval.d and reflex1 are switched.
   void speedv::function(const variant&) {
-    *hspd = rval.d * cos(*dir*M_PI/180.0);
-    *vspd = rval.d *-sin(*dir*M_PI/180.0);
+    *hspd = rval.d * std::cos(*dir * kPi / 180.0);
+    *vspd = rval.d * -std::sin(*dir * kPi / 180.0);
   }
 
   //Make hspeed work
@@ -50,11 +57,11 @@ namespace enigma {
     }
     else if (varnz(rval.d) or varnz(*vspd))
     {
-        const double angle = atan2(*vspd, rval.d);
+        const double angle = std::atan2(rval.d, *hspd);
         if (!std::isfinite(angle))
             return;
-        *dir = int((180.0+180.0*(1.0-angle/M_PI))+0.5)%360; //The +0.5 rounds it
-        *spd = hypot(rval.d,*vspd);
+        *dir = int((180.0 + 180.0 * (1.0 - angle / kPi)) + 0.5) % 360;
+        *spd = std::hypot(rval.d, *hspd);
     }
     else
     { // If both set to zero, make speed zero. Direction not set.
