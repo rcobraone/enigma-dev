@@ -33,7 +33,7 @@
 
 namespace enigma {
 	int Random_Seed;
-	unsigned long mt[625];
+	uint32_t mt[625];
 }
 
 
@@ -123,9 +123,12 @@ namespace enigma_user
   }
 
   int mtrandom_seed(int x){
-	  enigma::mt[0]=x&0xffffffff;
+	  enigma::mt[0] = static_cast<uint32_t>(x);
 	  for(int mti=1;mti<624;mti++)
-		  enigma::mt[mti]=1812433253*(enigma::mt[mti-1]^(enigma::mt[mti-1]>>30))+mti;
+		  enigma::mt[mti] = static_cast<uint32_t>(
+                     1812433253u * (enigma::mt[mti-1] ^
+                                    (enigma::mt[mti-1] >> 30)) +
+                     static_cast<uint32_t>(mti));
 	  enigma::mt[624] = 624;
 	  return 0;
   }
