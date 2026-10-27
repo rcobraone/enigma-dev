@@ -57,9 +57,13 @@ namespace enigma_user
 {
 
 void instance_deactivate_all(bool notme) {
+  enigma::object_basic *self =
+      enigma::instance_event_iterator
+          ? enigma::instance_event_iterator->inst
+          : NULL;
+	
     for (enigma::iterator it = enigma::instance_list_first(); it; ++it) {
-        if (notme && (*it)->id == enigma::instance_event_iterator->inst->id) continue;
-
+        if (notme && self && *it == self) continue;
         (*it)->deactivate();
         enigma::instance_deactivated_list.insert(inode_pair((*it)->id,*it));
     }
@@ -69,8 +73,12 @@ void instance_activate_all() {
 
     std::map<int,enigma::object_basic*>::iterator iter = enigma::instance_deactivated_list.begin();
     while (iter != enigma::instance_deactivated_list.end()) {
-        iter->second->activate();
-        enigma::instance_deactivated_list.erase(iter++);
+        enigma::object_basic *inst = iter->second;
+        std::map<int,enigma::object_basic*>::iterator next = iter;
+        ++next;
+        enigma::instance_deactivated_list.erase(iter);
+        iter = next;
+        inst->activate();
     }
 }
 
@@ -86,8 +94,11 @@ void instance_activate_object(int obj) {
     while (iter != enigma::instance_deactivated_list.end()) {
         enigma::object_basic* const inst = iter->second;
         if (obj == all || (obj < 100000 ? (inst->object_index==obj || inst->can_cast(obj)) : inst->id == unsigned(obj))) {
+            std::map<int,enigma::object_basic*>::iterator next = iter;
+            ++next;
+            enigma::instance_deactivated_list.erase(iter);
+            iter = next;   
             inst->activate();
-            enigma::instance_deactivated_list.erase(iter++);
         }
         else {
             iter++;
@@ -97,28 +108,48 @@ void instance_activate_object(int obj) {
 
 void instance_destroy(int id, bool dest_ev)
 {
-  for (enigma::iterator it = enigma::fetch_inst_iter_by_int(id); it; ++it) {
+  enigma::iterator it = enigma::fetch_inst_iter_by_int(id);
+  while (it) {
     enigma::object_basic* who = (*it);
     if (enigma::cleanups.find(who) == enigma::cleanups.end()) {
       if (dest_ev)
           who->myevent_destroy();
-      if (enigma::cleanups.find(who) == enigma::cleanups.end())
+      if (enigma::cleanups.find(who) != enigma::cleanups.end())
+        continue;
+          
           who->unlink();
+        // unlink() moves iterators to the next instance.
+        continue;     
     }
+    
+    ++it;
   }
 }
 
 void instance_destroy()
 {
-  enigma::object_basic* const a = enigma::instance_event_iterator->inst;
+  enigma::object_basic* const a =
+      enigma::instance_event_iterator
+          ? enigma::instance_event_iterator->inst
+          : NULL;
+
+  if (!a)
+    return;
+
   if (enigma::cleanups.find(a) == enigma::cleanups.end()) {
-    enigma::instance_event_iterator->inst->myevent_destroy();
+    a->myevent_destroy();
     if (enigma::cleanups.find(a) == enigma::cleanups.end())
-        enigma::instance_event_iterator->inst->unlink();
-    if (enigma::cleanups.find(a) == enigma::cleanups.end())
-    DEBUG_MESSAGE("FUCK! FUCK! FUCK! FUCK! FUCK! FUCK! FUCK! FUCK! FUCK! FUCK! FUCK! FUCK! FUCK!\nFFFFFFFFFFFFFFFFFFFFFUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUCK!\nFUCK! " + pointer2string(a) + " ISN'T ON THE GOD DAMNED MOTHER FUCKING STACK!", MESSAGE_TYPE::M_ERROR);
+        a->unlink();
+  if (enigma::cleanups.find(a) == enigma::cleanups.end())
+    DEBUG_MESSAGE(
+        "instance_destroy(): instance was not scheduled for cleanup.",
+        MESSAGE_TYPE::M_ERROR
+    );
     if (a != (enigma::object_basic*)enigma::instance_event_iterator->inst)
-    DEBUG_MESSAGE("FUCKING DAMN IT! THE ITERATOR CHANGED FROM POINTING TO " + pointer2string((void*)a) + " TO POINTING TO " + pointer2string((void*)(enigma::object_basic*)enigma::instance_event_iterator->inst), MESSAGE_TYPE::M_ERROR);
+    DEBUG_MESSAGE(
+        "instance_destroy(): event iterator changed unexpectedly.",
+        MESSAGE_TYPE::M_ERROR
+    );
   }
 }
 
@@ -129,18 +160,25 @@ bool instance_exists(int obj)
 
 enigma::instance_t instance_find(int obj, int num)
 {
-  int nth=0;
+  int nth = 0;
   for (enigma::iterator it = enigma::fetch_inst_iter_by_int(obj); it; ++it)
   {
-    nth++;
-    if (nth>num)
-    return (int) it->id;
+    if (nth == num)
+      return (int)it->id;
+    ++nth;
   }
   return noone;
 }
 
 enigma::instance_t instance_last(int obj) {
-  return (enigma::objects[obj].count > 0) ? static_cast<int>(enigma::objects[obj].prev->inst->id) : noone;
+  if (obj < 0 ||
+      static_cast<size_t>(obj) >= enigma::object_idmax) {
+    return noone;
+
+      return (enigma::objects[obj].count > 0)
+
+        ? static_cast<int>(enigma::objects[obj].prev->inst->id)
+        : noone;
 }
 
 int instance_number(int obj)
@@ -152,7 +190,9 @@ int instance_number(int obj)
     case all:
       return enigma::instance_list.size();
     default:
-      if (obj < 0) return 0;
+       if (obj < 0) return 0;
+       if (static_cast<size_t>(obj) >= enigma::object_idmax)
+        return 0;
   }
   return enigma::objects[obj].count;
 }
