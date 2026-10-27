@@ -90,7 +90,7 @@ namespace enigma
         double depth;
         bool persistent;
         double mask;
-        double parent;
+        int parent;
         int id;
     };
     void objectdata_load();

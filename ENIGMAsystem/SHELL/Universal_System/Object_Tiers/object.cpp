@@ -84,21 +84,31 @@ namespace enigma
     void objectdata_load()
     {
         objectdata.resize(object_idmax);
-        for (int i = 0; i < objectcount; i++)
-            objectdata[objs[i].id] = &objs[i];
+        for (int i = 0; i < objectcount; i++) {
+            const int id = objs[i].id;
+            if (id < 0 || static_cast<size_t>(id) >= object_idmax)
+                continue;
+
+        objectdata[id] = &objs[i];
     }
 }
 
 #if DEBUG_MODE
   #define errcheck(objid,err) \
-  if (objid < 0 or size_t(objid) >= enigma::object_idmax or !enigma::objectdata[objid]) \
-    return (DEBUG_MESSAGE(err, MESSAGE_TYPE::M_ERROR), 0)
+  if (objid < 0 || size_t(objid) >= enigma::object_idmax || !enigma::objectdata[objid]) \
+  return (DEBUG_MESSAGE(err, MESSAGE_TYPE::M_ERROR), 0)
+    
   #define errcheck_v(objid,err) \
-  if (objid < 0 or size_t(objid) >= enigma::object_idmax or !enigma::objectdata[objid]) \
-    DEBUG_MESSAGE(err, MESSAGE_TYPE::M_ERROR)
+  if (objid < 0 || size_t(objid) >= enigma::object_idmax || !enigma::objectdata[objid]) \
+  return (DEBUG_MESSAGE(err, MESSAGE_TYPE::M_ERROR)
 #else
-  #define errcheck(objid,err)
-  #define errcheck_v(objid,err)
+  #define errcheck(objid,err) \
+  if (objid < 0 || size_t(objid) >= enigma::object_idmax || !enigma::objectdata[objid]) \
+  return 0
+
+  #define errcheck_v(objid,err) \
+  if (objid < 0 || size_t(objid) >= enigma::object_idmax || !enigma::objectdata[objid]) \
+  return
 #endif
 
 namespace enigma_user
@@ -202,11 +212,14 @@ bool object_get_visible(int objid)
 bool object_is_ancestor(int objid, int acid)
 {
   errcheck(objid,"Object doesn't exist");
-  errcheck(acid,"Anchestor id doesn't exist");
-  while (objid >= 0)
+  errcheck(acid,"Ancestor id doesn't exist");
+  size_t steps = 0;
+  while (objid >= 0 &&
+         size_t(objid) < enigma::object_idmax &&
+         steps++ < enigma::object_idmax)
     if (objid == acid)
       return true;
-    else objid = enigma::objectdata[objid]->parent;
+    else objid = static_cast<int>(enigma::objectdata[objid]->parent);
   return false;
 }
 
