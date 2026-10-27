@@ -36,6 +36,11 @@ using enigma_user::sprite_get_bbox_bottom_relative;
 
 namespace enigma
 {
+    static inline int bbox_quadrant(double angle)
+    {
+        return int(fmod(fmod(angle, 360) + 360, 360) / 90.0);
+    }
+
     int object_collisions::$bbox_left() const
     {
         if (fzero(image_angle))
@@ -44,7 +49,7 @@ namespace enigma
                    ((mask_index >= 0 ? (sprite_get_bbox_right_relative(mask_index) + 1)*image_xscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_right_relative(sprite_index) + 1)*image_xscale - 1: 0)) + x + .5);
 
         const double arad = image_angle*(M_PI/180.0);
-        const int quad = int(fmod(fmod(image_angle, 360) + 360, 360)/90.0);
+        const int quad = bbox_quadrant(image_angle);
         double w, h;
         w = ((image_xscale >= 0)^(quad == 1 || quad == 2)) ?
             (mask_index >= 0 ? sprite_get_bbox_left_relative(mask_index)*image_xscale : (sprite_index >= 0 ? sprite_get_bbox_left_relative(sprite_index)*image_xscale : 0)) :
@@ -64,7 +69,7 @@ namespace enigma
                    ((mask_index >= 0 ? sprite_get_bbox_left_relative(mask_index)*image_xscale : (sprite_index >= 0 ? sprite_get_bbox_left_relative(sprite_index)*image_xscale : 0)) + x + .5);
 
         const double arad = image_angle*(M_PI/180.0);
-        const int quad = int(fmod(fmod(image_angle, 360) + 360, 360)/90.0);
+        const int quad = bbox_quadrant(image_angle);
         double w, h;
         w = ((image_xscale >= 0)^(quad == 1 || quad == 2)) ?
             (mask_index >= 0 ? (sprite_get_bbox_right_relative(mask_index) + 1)*image_xscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_right_relative(sprite_index) + 1)*image_xscale - 1: 0)) :
@@ -84,7 +89,7 @@ namespace enigma
                 ((mask_index >= 0 ? (sprite_get_bbox_bottom_relative(mask_index) + 1)*image_yscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_bottom_relative(sprite_index) + 1)*image_yscale - 1: 0)) + y + .5);
 
         const double arad = image_angle*(M_PI/180.0);
-        const int quad = int(fmod(fmod(image_angle, 360) + 360, 360)/90.0);
+        const int quad = bbox_quadrant(image_angle);
         double w, h;
         w = ((image_xscale >= 0)^(quad == 2 || quad == 3)) ?
             (mask_index >= 0 ? (sprite_get_bbox_right_relative(mask_index) + 1)*image_xscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_right_relative(sprite_index) + 1)*image_xscale - 1: 0)) :
@@ -104,7 +109,7 @@ namespace enigma
                 ((mask_index >= 0 ? sprite_get_bbox_top_relative(mask_index)*image_yscale : (sprite_index >= 0 ? sprite_get_bbox_top_relative(sprite_index)*image_yscale : 0)) + y + .5);
 
         const double arad = image_angle*(M_PI/180.0);
-        const int quad = int(fmod(fmod(image_angle, 360) + 360, 360)/90.0);
+        const int quad = bbox_quadrant(image_angle);
         double w, h;
         w = ((image_xscale >= 0)^(quad == 2 || quad == 3)) ?
             (mask_index >= 0 ? sprite_get_bbox_left_relative(mask_index)*image_xscale : (sprite_index >= 0 ? sprite_get_bbox_left_relative(sprite_index)*image_xscale : 0)) :
@@ -118,21 +123,35 @@ namespace enigma
 
     const BoundingBox object_collisions::$bbox_relative() const
     {
-        return (mask_index >= 0 ? sprite_get_bbox_relative(mask_index) : sprite_get_bbox_relative(sprite_index));
+        if (mask_index >= 0)
+            return sprite_get_bbox_relative(mask_index);
+        if (sprite_index >= 0)
+            return sprite_get_bbox_relative(sprite_index);
+        return BoundingBox{0, 0, 0, 0};
     }
     
     const BoundingBox& object_collisions::$bbox() const
     {
-         return (mask_index >= 0 ? sprite_get_bbox(mask_index) : sprite_get_bbox(sprite_index));
+        if (mask_index >= 0)
+            return sprite_get_bbox(mask_index);
+        if (sprite_index >= 0)
+            return sprite_get_bbox(sprite_index);
+
+        static const BoundingBox empty_bbox{0, 0, 0, 0};
+        return empty_bbox;
     }
 
-    object_collisions::object_collisions(): object_transform() { 
+    object_collisions::object_collisions(): object_transform() {
+        mask_index = -1;
+        solid = false;		 
         polygon_index = -1;
         polygon_xscale = polygon_yscale = 1;
         polygon_angle = 0;
     }
 
     object_collisions::object_collisions(unsigned _id,int _objid): object_transform(_id,_objid) {
+        mask_index = -1;
+        solid = false;		
         polygon_index = -1;
         polygon_xscale = polygon_yscale = 1;
         polygon_angle = 0;
