@@ -20,6 +20,7 @@
 #include <map>
 #include <deque>
 #include <set>
+#include <algorithm>
 #include <math.h>
 #include <vector>
 #include <string>
@@ -76,32 +77,44 @@ namespace enigma
   }
 
   void iterator::handle_unlink(const inst_iter *dead) {
-    if (it) {
-      if (it->next == dead) {
-        it->next = dead->next;
-      } else if (it->prev == dead) {
-        it->prev = dead->prev;
-      }
+    if (!it)
+      return;
+
+    if (it == dead) {
+      it = dead->next;
+    }
+    else if (it == &temp_iter && temp_iter.inst == dead->inst) {
+      temp_iter.inst = NULL;
+    }
+    else if (it->next == dead) {
+      it->next = dead->next;
+    }
+    else if (it->prev == dead) {
+      it->prev = dead->prev;
     }
   }
 
-  iterator::operator bool() { return it; }
+  iterator::operator bool() { return it && it->inst; }
   iterator &iterator::operator++() {
-    it = it->next;
+    if (it)
+      it = it->next;
     return *this;
   }
   iterator  iterator::operator++(int) {
     iterator ret(*this);
-    it = it->next;
+      if (it)
+        it = it->next;
     return ret;
   }
   iterator &iterator::operator--() {
-    it = it->prev;
+    if (it)
+      it = it->prev;
     return *this;
   }
   iterator  iterator::operator--(int) {
     iterator ret(*this);
-    it = it->prev;
+      if (it)
+        it = it->prev;
     return ret;
   }
 
@@ -166,7 +179,7 @@ namespace enigma
     if (which->prev) which->prev->next = which->next;
     if (which->next) which->next->prev = which->prev;
     if (prev == which) prev = which->prev; // If our last item is this, decrement our last item.
-    if (next == which) next = NULL; // If our first item is this, we have no item.
+    if (next == which) next = which->next; // If our first item is this, we have no item.
     update_iterators_for_destroy(which);
   }
 
@@ -180,11 +193,14 @@ namespace enigma
 
   void unlink_object_id_iter(inst_iter* which, int oid)
   {
+    if (!which || oid < 0 || static_cast<size_t>(oid) >= object_idmax)
+      return;
     if (which->prev) which->prev->next = which->next;
     if (which->next) which->next->prev = which->prev;
     objectid_base *a = objects + oid;
     if (a->prev == which) a->prev = which->prev;
-    a->count--;
+    if (a->next == which) a->next = which->next;
+    if (a->count > 0) --a->count;
     update_iterators_for_destroy(which);
   }
 
@@ -272,7 +288,10 @@ namespace enigma
     if (x < 0) switch (x) // Keyword-based lookup
     {
       case self:
-      case local:  return iterator(instance_event_iterator->inst);
+      case local:
+        return instance_event_iterator->inst
+            ? iterator(instance_event_iterator->inst)
+            : iterator();
       case other:  return instance_other ? iterator(instance_other) : iterator();
       case all:    return instance_list_first();
       case global: return &ENIGMA_global_instance_iterator;
@@ -280,8 +299,10 @@ namespace enigma
          default:  return iterator();
     }
 
-    if (x < 100000) // Object-index-based lookup
-      return objects[x].next;
+    if (x < 100000)// Object-index-based lookup
+      return static_cast<size_t>(x) < object_idmax
+          ? objects[x].next
+          : iterator();
 
     // ID-based lookup
     iliter a = instance_list.find(x);
@@ -289,18 +310,12 @@ namespace enigma
   }
   iterator fetch_inst_iter_by_id(int x)
   {
-    if (x < 100000)
-      return iterator();
-
     iliter a = instance_list.find(x);
     return a != instance_list.end() ? iterator(a->second->inst) : iterator();
   }
 
   iterator fetch_roominst_iter_by_id(int x)
   {
-    if (x < 100000)
-      return iterator();
-
     //Check if it's a deactivated instance first.
     std::map<int,enigma::object_basic*>::iterator rIt = enigma::instance_deactivated_list.find(x);
     if (rIt!=enigma::instance_deactivated_list.end()) {
@@ -325,12 +340,13 @@ namespace enigma
   pinstance_list_iterator link_instance(object_basic* who)
   {
     inst_iter *ins = new inst_iter(who);
-    enigma_user::instance_id.push_back(who->id);
+    
     pair<iliter,bool> it = instance_list.insert(inode_pair(who->id,ins));
     if (!it.second) {
       delete ins;
       return new winstance_list_iterator(it.first);
     }
+    enigma_user::instance_id.push_back(who->id);
     if (it.first != instance_list.begin())
     {
       iliter ib = it.first; ib--; // Find the previous iterator
@@ -350,34 +366,63 @@ namespace enigma
   }
   inst_iter *link_obj_instance(object_basic* who, int oid)
   {
+    if (oid < 0 || static_cast<size_t>(oid) >= object_idmax)
+      return NULL;  
     objects[oid].count++;
     return objects[oid].add_inst(who);
   }
 
   void instance_iter_queue_for_destroy(object_basic* inst)
   {
-    enigma::cleanups.insert(inst);
-    enigma_user::instance_count--;
+    std::pair<std::set<object_basic*>::iterator, bool> result =
+      enigma::cleanups.insert(inst);
+    if (result.second)
+      enigma_user::instance_count--;
   }
+  
   void dispose_destroyed_instances()
   {
     for (set<object_basic*>::iterator i = cleanups.begin(); i != cleanups.end(); i++)
       delete (*i);
     cleanups.clear();
   }
+  
   void unlink_main(instance_list_iterator who)
   {
     inst_iter *a = who->second;
+
+    std::deque<int>::iterator id_it =
+        std::find(enigma_user::instance_id.begin(),
+                  enigma_user::instance_id.end(),
+                  a->inst->id);
+    if (id_it != enigma_user::instance_id.end())
+      enigma_user::instance_id.erase(id_it);
+   
     if (a->prev) a->prev->next = a->next;
     if (a->next) a->next->prev = a->prev;
+    
+    instance_deactivated_list.erase(a->inst->id);
+    
     instance_list.erase(who);
     update_iterators_for_destroy(a);
   }
+  
   void unlink_main(pinstance_list_iterator whop)
   {
     inst_iter *a = whop->w->second;
+
+    std::deque<int>::iterator id_it =
+        std::find(enigma_user::instance_id.begin(),
+                  enigma_user::instance_id.end(),
+                  a->inst->id);
+    if (id_it != enigma_user::instance_id.end())
+      enigma_user::instance_id.erase(id_it);
+   
     if (a->prev) a->prev->next = a->next;
     if (a->next) a->next->prev = a->prev;
+    
+    instance_deactivated_list.erase(a->inst->id);
+    
     instance_list.erase(whop->w);
     update_iterators_for_destroy(a);
   }
