@@ -25,6 +25,7 @@
 #include "Graphics_Systems/General/GStextures.h"
 #include "Widget_Systems/widgets_mandatory.h"
 #include <limits>
+#include <cstring>
 
 using enigma::Background;
 using enigma::backgrounds;
@@ -91,7 +92,13 @@ int background_create_color(unsigned w, unsigned h, int col, bool preload) {
   }
 
   RawImage img(new unsigned char[pixels * 4], fullwidth, fullheight);
-  std::fill((unsigned*)(img.pxdata), (unsigned*)(img.pxdata) + fullwidth * fullheight, (COL_GET_R(col) | (COL_GET_G(col) << 8) | (COL_GET_B(col) << 16) | 255 << 24));
+  const unsigned pixel =
+      COL_GET_R(col) | (COL_GET_G(col) << 8) |
+      (COL_GET_B(col) << 16) | (255u << 24);
+  for (size_t i = 0; i < pixels; ++i) {
+    std::memcpy(img.pxdata + i * 4, &pixel, sizeof(pixel));
+  }
+  
   int textureID = graphics_create_texture(img, false);
   return backgrounds.add(std::move(Background(w, h, fullwidth, fullheight, textureID)));
 }
