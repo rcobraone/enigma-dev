@@ -578,16 +578,20 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
 
   template<typename T>
   decltype(0LL << (int)*(T*)nullptr) operator<<(T x) const {
-    const int shift = (int) x;
-    if (shift < 0 || shift >= 64)
+    const double shift_value = static_cast<double>(x);
+    if (!std::isfinite(shift_value) ||
+        shift_value < 0.0 || shift_value >= 64.0)
       return 0;
+    const int shift = static_cast<int>(shift_value);
     return (long long) rval.d << shift;
   }
   template<typename T>
   decltype(0LL >> (int)*(T*)nullptr) operator>>(T x) const {
-    const int shift = (int) x;
-    if (shift < 0 || shift >= 64)
+    const double shift_value = static_cast<double>(x);
+    if (!std::isfinite(shift_value) ||
+        shift_value < 0.0 || shift_value >= 64.0)
       return 0;
+    const int shift = static_cast<int>(shift_value);
     return (long long) rval.d >> shift;
   }
   template<typename T>
