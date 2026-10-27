@@ -23,6 +23,7 @@ Subimage::Subimage(const Subimage &s, bool duplicateTexture) {
 }
 
 void Subimage::FreeTexture() {
+  if (textureID == -1) return;	
   enigma::graphics_delete_texture(textureID);
   textureID = -1;
 }
@@ -34,9 +35,21 @@ void Sprite::SetTexture(int subimg, int textureID, TexRect texRect) {
 }
 
 const int Sprite::ModSubimage(int subimg) const {
-  if (SubimageCount() == 0) return 0;
-  if (subimg >= 0) return subimg % SubimageCount();
-  return int(((enigma::object_graphics*)enigma::instance_event_iterator->inst)->image_index) % SubimageCount();
+  const size_t count = SubimageCount();
+
+  if (count == 0) return 0;
+  if (subimg >= 0) return subimg % count;
+
+  if (!enigma::instance_event_iterator ||
+      !enigma::instance_event_iterator->inst) {
+    return 0;
+  }
+
+  return int(
+      static_cast<enigma::object_graphics*>(
+          enigma::instance_event_iterator->inst
+      )->image_index
+  ) % count;
 }
 
 Sprite::Sprite(const Sprite& s) {

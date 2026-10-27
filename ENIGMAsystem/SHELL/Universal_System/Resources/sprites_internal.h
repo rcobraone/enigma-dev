@@ -44,7 +44,12 @@ struct Subimage {
   // AssArray mandatory
   static const char* getAssetTypeName() { return "Subimage"; }
   bool isDestroyed() const { return _destroyed; }
-  void destroy() { _destroyed = true; }
+  void destroy() {
+    if (_destroyed) return;
+    FreeTextures();
+    _destroyed = true;
+  }
+  
   bool _destroyed = false;
   
   int textureID = -1; 
@@ -89,7 +94,11 @@ public:
   // AssArray mandatory
   static const char* getAssetTypeName() { return "Sprite"; }
   bool isDestroyed() const { return _destroyed; }
-  void destroy() { _destroyed = true; }
+  void destroy() {
+    if (_destroyed) return;
+    FreeTextures();
+    _destroyed = true;
+  }
   
 protected:
   bool _destroyed = false;
