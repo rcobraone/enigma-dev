@@ -367,7 +367,7 @@ int room_restart()
 
 string room_get_name(int indx)
 {
-  if (unsigned(indx) >= unsigned(enigma::room_idmax) or !enigma::roomdata[indx]){
+  if (!valid_room_index(indx)) {
     return "<undefined>";
   } else {
     return enigma::roomdata[indx]->name;
@@ -452,10 +452,11 @@ int room_goto_previous()
 
 int room_next(int num)
 {
-  if (num < 0 or size_t(num) >= enigma::room_idmax)
+  if (num < 0 || static_cast<size_t>(num) >= enigma::room_idmax)
     return -1;
   enigma::roomstruct *rit = enigma::roomdata[num];
-  if (!rit or rit->order+1 >= enigma::room_loadtimecount)
+  if (!rit || rit->order < 0 ||
+      rit->order >= enigma::room_loadtimecount - 1)
     return -1;
   return enigma::roomorder[rit->order + 1]->id;
 }
@@ -607,7 +608,8 @@ int room_tile_add_ext(int indx, int bck, int left, int top, int width, int heigh
 
 int room_tile_clear(int indx)
 {
-  errcheck(indx,"Nonexistent room", 0);
+  if (!valid_room_index(indx))
+    return 0;
   enigma::roomstruct *rm = enigma::roomdata[indx];
 
   rm->tiles.clear();
@@ -617,7 +619,8 @@ int room_tile_clear(int indx)
 
 int room_instance_add(int indx, int x, int y, int obj)
 {
-  errcheck(indx,"Nonexistent room", 0);
+  if (!valid_room_index(indx))
+    return 0;
   enigma::roomstruct *rm = enigma::roomdata[indx];
   rm->instances.emplace_back(
     enigma::maxid++,
@@ -630,7 +633,8 @@ int room_instance_add(int indx, int x, int y, int obj)
 
 int room_instance_clear(int indx)
 {
-  errcheck(indx,"Nonexistent room", 0);
+  if (!valid_room_index(indx))
+    return 0;
   enigma::roomstruct *rm = enigma::roomdata[indx];
   rm->instances.clear();
   return 1;
