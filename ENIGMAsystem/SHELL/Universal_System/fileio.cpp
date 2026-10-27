@@ -94,25 +94,28 @@ int file_text_open_append(const std::string& fname) {
 
 // Closes the file with the given file id
 void file_text_close(int fileid) {
-  if (fileid >= 0 && fileid < static_cast<int>(enigma::files.size())) {
+  if (enigma::valid_file_handle(fileid)) {
     enigma::files.get(fileid).fs.close();
   } else DEBUG_MESSAGE("Cannot close an unopened file: " + std::to_string(fileid), MESSAGE_TYPE::M_USER_ERROR);
 }
 
 // Writes the std::string to the file with the given file id.
 void file_text_write_string(int fileid, const std::string& str) {
+  if (!enigma::valid_file_handle(fileid)) return;	
   enigma::files.get(fileid).fs << str;
   try_io_and_print(enigma::files.get(fileid))
 }
 
 // Write the real value to the file with the given file id.
 void file_text_write_real(int fileid, double x) {
+  if (!enigma::valid_file_handle(fileid)) return;
   enigma::files.get(fileid).fs << " " << x << std::setprecision(16);
   try_io_and_print(enigma::files.get(fileid))
 }
 
 // Write a newline character to the file.
 void file_text_writeln(int fileid) {
+  if (!enigma::valid_file_handle(fileid)) return;
   enigma::files.get(fileid).fs << '\n';
   try_io_and_print(enigma::files.get(fileid))
 }
@@ -125,6 +128,7 @@ void file_text_writeln(int fileid, const std::string& str) {
 
 // Reads a string from the file with the given file id and returns this string. A string ends at the end of line.
 std::string file_text_read_string(int fileid) {
+  if (!enigma::valid_file_handle(fileid)) return {};
   std::string line;
   if (std::getline(enigma::files.get(fileid).fs, line)) {
     enigma::files.get(fileid).fs.unget();
@@ -134,6 +138,7 @@ std::string file_text_read_string(int fileid) {
 }
 
 std::string file_text_read_all(int fileid) {
+  if (!enigma::valid_file_handle(fileid)) return {};
   std::string all, line;
   bool first_line = true;
   while(std::getline(enigma::files.get(fileid).fs, line)) {
@@ -148,10 +153,12 @@ std::string file_text_read_all(int fileid) {
 }
 
 bool file_text_eoln(int fileid) {
+  if (!enigma::valid_file_handle(fileid)) return true;
   return (static_cast<char>(enigma::files.get(fileid).fs.peek()) == '\n' || enigma::files.get(fileid).fs.eof());
 }
 
 double file_text_read_real(int fileid) { // Reads a real value from the file and returns this value.
+  if (!enigma::valid_file_handle(fileid)) return 0.0;
   double x = 0;
   enigma::files.get(fileid).fs >> x;
   try_io_and_print(enigma::files.get(fileid))
@@ -160,12 +167,14 @@ double file_text_read_real(int fileid) { // Reads a real value from the file and
 
 // Skips the rest of the line in the file and starts at the start of the next line.
 std::string file_text_readln(int fileid) {
+  if (!enigma::valid_file_handle(fileid)) return {};
   std::string line;
   std::getline(enigma::files.get(fileid).fs, line);
   return line;
 }
 
 bool file_text_eof(int fileid) { // Returns whether we reached the end of the file.
+  if (!enigma::valid_file_handle(fileid)) return true;
   return (enigma::files.get(fileid).fs.eof());
 }
 
@@ -222,7 +231,7 @@ size_t file_bin_size(int fileid) {
 
   const size_t length = static_cast<size_t>(endPos);
   fs.clear();
-  fs.seekg(currPos)
+  fs.seekg(currPos);
   try_io_and_print(enigma::files.get(fileid))
   return length;
 }
