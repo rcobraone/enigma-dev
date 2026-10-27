@@ -145,7 +145,8 @@ void instance_destroy()
         "instance_destroy(): instance was not scheduled for cleanup.",
         MESSAGE_TYPE::M_ERROR
     );
-    if (a != (enigma::object_basic*)enigma::instance_event_iterator->inst)
+    if (!enigma::instance_event_iterator ||
+        a != enigma::instance_event_iterator->inst)
     DEBUG_MESSAGE(
         "instance_destroy(): event iterator changed unexpectedly.",
         MESSAGE_TYPE::M_ERROR
