@@ -112,55 +112,37 @@ namespace enigma_user
          return 0;
     }
 
-    //Check partial collision with lines
-    int b1 = ((x1 > sx1) ? 1 : 0) | (((y1 > sy1) ? 1 : 0) << 1) |
-        (((x1 > sx2) ? 1 : 0) << 2) | (((y1 > sy2) ? 1 : 0) << 3);
-    if (b1 == 3) return 2;
+    // Check triangle edges against rectangle edges without slope division.
+    const auto segments_intersect = [](ma_scalar ax, ma_scalar ay,
+                                       ma_scalar bx, ma_scalar by,
+                                       ma_scalar cx, ma_scalar cy,
+                                       ma_scalar dx, ma_scalar dy) {
+      const ma_scalar abx = bx - ax, aby = by - ay;
+      const ma_scalar cdx = dx - cx, cdy = dy - cy;
+      const ma_scalar denom = abx * cdy - aby * cdx;
+      if (denom == 0) return false;
 
-    int b2 = ((x2 > sx1) ? 1 : 0) | (((y2 > sy1) ? 1 : 0) << 1) |
-        (((x2 > sx2) ? 1 : 0) << 2) | (((y2 > sy2) ? 1 : 0) << 3);
-    if (b2 == 3) return 2;
+      const ma_scalar acx = cx - ax, acy = cy - ay;
+      const ma_scalar t = (acx * cdy - acy * cdx) / denom;
+      const ma_scalar u = (acx * aby - acy * abx) / denom;
+      return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+    };
 
-    int b3 = ((x3 > sx1) ? 1 : 0) | (((y3 > sy1) ? 1 : 0) << 1) |
-        (((x3 > sx2) ? 1 : 0) << 2) | (((y3 > sy2) ? 1 : 0) << 3);
-    if (b3 == 3) return 2;
+    const ma_scalar tx[] = {x1, x2, x3};
+    const ma_scalar ty[] = {y1, y2, y3};
+    const ma_scalar rx[] = {sx1, sx2, sx2, sx1};
+    const ma_scalar ry[] = {sy1, sy1, sy2, sy2};
 
-    //Check partial collision with points
-    int i = b1 ^ b2;
-    if (i != 0)
-    {
-        ma_scalar c, m, s;
-        m = (y2-y1) / (x2-x1);
-        c = y1 -(m * x1);
-        if (i & 1) { s = m * sx1 + c; if ( s > sy1 && s < sy2) return 2; }
-        if (i & 2) { s = (sy1 - c) / m; if ( s > sx1 && s < sx2) return 2; }
-        if (i & 4) { s = m * sx2 + c; if ( s > sy1 && s < sy2) return 2; }
-        if (i & 8) { s = (sy2 - c) / m; if ( s > sx1 && s < sx2) return 2; }
+    for (int t = 0; t < 3; ++t) {
+      const int next_t = (t + 1) % 3;
+      for (int r = 0; r < 4; ++r) {
+        const int next_r = (r + 1) % 4;
+        if (segments_intersect(tx[t], ty[t], tx[next_t], ty[next_t],
+                               rx[r], ry[r], rx[next_r], ry[next_r]))
+          return 2;
+      }
     }
 
-    i = b2 ^ b3;
-    if (i != 0)
-    {
-        ma_scalar c, m, s;
-        m = (y3-y2) / (x3-x2);
-        c = y2 -(m * x2);
-        if (i & 1) { s = m * sx1 + c; if ( s > sy1 && s < sy2) return 2; }
-        if (i & 2) { s = (sy1 - c) / m; if ( s > sx1 && s < sx2) return 2; }
-        if (i & 4) { s = m * sx2 + c; if ( s > sy1 && s < sy2) return 2; }
-        if (i & 8) { s = (sy2 - c) / m; if ( s > sx1 && s < sx2) return 2; }
-    }
-
-    i = b1 ^ b3;
-    if (i != 0)
-    {
-        ma_scalar c, m, s;
-        m = (y3-y1) / (x3-x1);
-        c = y1 -(m * x1);
-        if (i & 1) { s = m * sx1 + c; if ( s > sy1 && s < sy2) return 2; }
-        if (i & 2) { s = (sy1 - c) / m; if ( s > sx1 && s < sx2) return 2; }
-        if (i & 4) { s = m * sx2 + c; if ( s > sy1 && s < sy2) return 2; }
-        if (i & 8) { s = (sy2 - c) / m; if ( s > sx1 && s < sx2) return 2; }
-    }
 
     //Check if totally overlapped (at this point can be done by checking if the rectangle center is inside the triangle)
     if (point_in_triangle(sx1+(sx2-sx1)/2.0, sy1+(sy2-sy1)/2.0,x1,y1,x2,y2,x3,y3)) return 1;
