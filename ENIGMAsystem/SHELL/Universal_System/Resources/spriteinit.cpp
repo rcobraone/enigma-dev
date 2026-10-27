@@ -100,7 +100,7 @@ namespace enigma
         unsigned int size;
         if (!fread_wrapper(&size,4,1,exe)) return; //co//ut << "Alloc size: " << size << endl;
         if (size == (std::numeric_limits<unsigned int>::max)()) return;
-        unsigned char* cpixels = new (std::nothrow) unsigned char[static_cast<size_t>(size) + 1
+        unsigned char* cpixels = new (std::nothrow) unsigned char[static_cast<size_t>(size) + 1];
         if (!cpixels)
         {  //FIXME: Uncomment these when tostring is available
           DEBUG_MESSAGE("Failed to load sprite: Cannot allocate enough memory "+ toString(unpacked), MESSAGE_TYPE::M_ERROR);
