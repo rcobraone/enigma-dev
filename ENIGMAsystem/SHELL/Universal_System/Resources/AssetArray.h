@@ -42,27 +42,24 @@ namespace enigma {
 template<typename T, int LEFT> 
 class OffsetVector {
   std::vector<T> data_owner_;
-  T* data_;
+
 
  public:
-  OffsetVector(): data_(nullptr) {}
+  OffsetVector(): data_owner_(static_cast<size_t>(LEFT)) {}
   OffsetVector(const OffsetVector<T, LEFT> &other):
-    data_owner_(other.data_owner_),
-    data_(data_owner_.empty() ? nullptr : data_owner_.data() - LEFT) {
+  data_owner_(other.data_owner_) {
   }
   size_t size() const {
-    return data_owner_.size() + LEFT;
+    return data_owner_.size();
   }
-  T *data() { return data_; }
-  const T *data() const { return data_; }
+  T *data() { return data_owner_.data(); }
+  const T *data() const { return data_owner_.data(); }
   template<typename... U> size_t push_back(U... args) {
     data_owner_.push_back(args...);
-    data_ = data_owner_.data() - LEFT;
     return size() - 1;
   }
   template<typename... U> size_t emplace_back(U... args) {
     data_owner_.emplace_back(std::move(args)...);
-    data_ = data_owner_.data() - LEFT;
     return size() - 1;
   }
   template<typename ind_t> T& operator[](ind_t index) {
@@ -72,16 +69,9 @@ class OffsetVector {
     return data()[index];
   }
   void resize(size_t count) {
-    if (count < static_cast<size_t>(LEFT)) {
-      data_owner_.clear();
-      data_ = nullptr;
-      return;
-    }
-
-    data_owner_.resize(count - static_cast<size_t>(LEFT));
-    data_ = data_owner_.empty()
-      ? nullptr
-      : data_owner_.data() - LEFT;
+  if (count < static_cast<size_t>(LEFT))
+    count = static_cast<size_t>(LEFT);
+  data_owner_.resize(count);
   }
 };
 
