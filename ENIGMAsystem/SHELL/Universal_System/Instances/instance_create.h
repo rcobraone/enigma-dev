@@ -58,7 +58,13 @@ namespace enigma
       }
       (void)ob;
 
-      object_graphics* newinst = (object_graphics*) (*fetch_inst_iter_by_int(idn));
+      iterator newit = fetch_inst_iter_by_id(idn);
+      if (!newit)
+          return;
+
+      object_graphics* newinst =
+          (object_graphics*) (*newit);
+
       newinst->x=x; newinst->y=y; newinst->yprevious=yprevious; newinst->xprevious=xprevious;
       newinst->xstart=xstart; newinst->ystart=ystart;
       newinst->image_index=image_index; newinst->image_speed=image_speed;
@@ -69,8 +75,9 @@ namespace enigma
 
   object_basic* instance_create_id(int x,int y,int object,int idn)
   { //This is for use by the system only. Please leave be.
-    if (maxid < idn)
-      maxid = idn;
+  if (maxid <= idn)
+    maxid = idn + 1;
+    
     object_basic* ob;
     switch (object)
     {
@@ -118,7 +125,15 @@ namespace enigma_user
           #endif
         return -1;
     }
-    enigma::object_graphics* newinst = (enigma::object_graphics*) (*enigma::fetch_inst_iter_by_int(idn));
+    
+    enigma::iterator newit =
+        enigma::fetch_inst_iter_by_id(idn);
+    if (!newit)
+      return -1;
+
+    enigma::object_graphics* newinst =
+        (enigma::object_graphics*) (*newit);
+
     newinst->depth = depth;
     ob->myevent_create();
     return idn;
@@ -128,12 +143,20 @@ namespace enigma_user
 
   void instance_change(int obj, bool perf) {
       enigma::object_graphics* inst = (enigma::object_graphics*) enigma::instance_event_iterator->inst;
+
+    if (!inst)
+        return;
+
       enigma::instance_change_inst(obj, perf, inst);
   }
 
   void instance_copy(bool perf)
   {
     enigma::object_graphics* inst = (enigma::object_graphics*) enigma::instance_event_iterator->inst;
+
+    if (!inst)
+      return;
+
     int idn = enigma::maxid++;
 
     enigma::object_basic* ob;
@@ -152,7 +175,14 @@ namespace enigma_user
     }
     (void)ob;
 
-    enigma::object_graphics* newinst = (enigma::object_graphics*) (*enigma::fetch_inst_iter_by_int(idn));
+    enigma::iterator newit =
+        enigma::fetch_inst_iter_by_id(idn);
+    if (!newit)
+        return;
+
+    enigma::object_graphics* newinst =
+        (enigma::object_graphics*) (*newit);
+
     newinst->yprevious=inst->yprevious; newinst->xprevious=inst->xprevious;
     newinst->xstart=inst->xstart; newinst->ystart=inst->ystart;
     newinst->image_index=inst->image_index; newinst->image_speed=inst->image_speed;
