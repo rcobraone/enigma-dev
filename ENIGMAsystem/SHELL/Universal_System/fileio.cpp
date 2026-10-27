@@ -33,6 +33,10 @@
 #endif
 
 namespace enigma {
+	
+  static inline bool valid_file_handle(int fileid) {
+    return files.exists(fileid);
+  }
   
   struct file {
     file() {}
@@ -131,9 +135,14 @@ std::string file_text_read_string(int fileid) {
 
 std::string file_text_read_all(int fileid) {
   std::string all, line;
+  bool first_line = true;
   while(std::getline(enigma::files.get(fileid).fs, line)) {
     try_io_and_print(enigma::files.get(fileid))
+  if (!first_line) {
+    all += '\n';
+    }
     all += line;
+    first_line = false;
   }
   return all;
 }
@@ -181,6 +190,7 @@ int file_bin_open(const std::string& fname, int mode) {
 
 // Rewrites the file with the given file id, that is, clears it and starts writing at the start.
 bool file_bin_rewrite(int fileid) {
+  if (!enigma::valid_file_handle(fileid)) return false;
   enigma::files.get(fileid).fs.close();
   enigma::files.get(fileid).fs.open(enigma::files.get(fileid).fn, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
   try_io_and_print(enigma::files.get(fileid))
@@ -189,30 +199,37 @@ bool file_bin_rewrite(int fileid) {
 
 // Closes the file with the given file id.
 void file_bin_close(int fileid) {
+  if (!enigma::valid_file_handle(fileid)) return;
   enigma::files.get(fileid).fs.close();
 }
 
 // Returns the size (in bytes) of the file with the given file id.
 size_t file_bin_size(int fileid) {
-  const std::streampos currPos = enigma::files.get(fileid).fs.tellg();
+  if (!enigma::valid_file_handle(fileid)) return 0;
+  auto& fs = enigma::files.get(fileid).fs;
+  if (!fs.is_open()) return 0;
+
+  const std::streampos currPos = fs.tellg();
   if (currPos < 0)
     return 0;
-  enigma::files.get(fileid).fs.seekg(0, enigma::files.get(fileid).fs.end);
-  const std::streampos endPos = enigma::files.get(fileid).fs.tellg();
+  fs.seekg(0, std::ios::end);
+  const std::streampos endPos = fs.tellg();
   if (endPos < 0) {
-    enigma::files.get(fileid).fs.clear();
-    enigma::files.get(fileid).fs.seekg(currPos);
+    fs.clear();
+    fs.seekg(currPos);
     return 0;
   }
 
   const size_t length = static_cast<size_t>(endPos);
-  enigma::files.get(fileid).fs.seekg(currPos);
+  fs.clear();
+  fs.seekg(currPos)
   try_io_and_print(enigma::files.get(fileid))
   return length;
 }
 
 // Returns the current position (in bytes; 0 is the first position) of the file with the given file id.
 size_t file_bin_position(int fileid) {
+  if (!enigma::valid_file_handle(fileid)) return 0;
   const std::streampos position = enigma::files.get(fileid).fs.tellg();
   if (position < 0) {
     try_io_and_print(enigma::files.get(fileid))
@@ -223,6 +240,7 @@ size_t file_bin_position(int fileid) {
 
 // Moves the current position of the file to the indicated position. To append to a file move the position to the size of the file before writing.
 void file_bin_seek(int fileid, size_t pos) {
+  if (!enigma::valid_file_handle(fileid)) return;	
   enigma::files.get(fileid).fs.seekg(pos);
   enigma::files.get(fileid).fs.seekp(pos);
   try_io_and_print(enigma::files.get(fileid))
@@ -230,12 +248,14 @@ void file_bin_seek(int fileid, size_t pos) {
 
 // Writes a byte of data to the file with the given file id.
 void file_bin_write_byte(int fileid, unsigned char byte) {
+  if (!enigma::valid_file_handle(fileid)) return;	
   enigma::files.get(fileid).fs.put(static_cast<char>(byte));
   try_io_and_print(enigma::files.get(fileid))
 }
 
 // Reads a byte of data from the file and returns this
 int file_bin_read_byte(int fileid) {
+  if (!enigma::valid_file_handle(fileid)) return -1;
   const int value = enigma::files.get(fileid).fs.get();
   bool good = enigma::files.get(fileid).fs.good();
   try_io_and_print(enigma::files.get(fileid))
