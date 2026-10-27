@@ -106,8 +106,20 @@ namespace enigma
         break;
       }
 
+      // Validate the resource offset before seeking.
+      const int64_t file_size = ftell_wrapper(resfile);
+      if (file_size < 8 || pos < 0 ||
+          static_cast<int64_t>(pos) > file_size - 8) {
+        DEBUG_MESSAGE("Invalid resource data offset", MESSAGE_TYPE::M_ERROR);
+        fclose_wrapper(resfile);
+        break;
+      }
+
       // Go to the start of the resource data
-      fseek_wrapper(resfile,pos,SEEK_SET);
+      if (fseek_wrapper(resfile, static_cast<int64_t>(pos), SEEK_SET) != 0) {
+        fclose_wrapper(resfile);
+        break;
+      }
       if (!fread_wrapper(&nullhere,4,1,resfile) || nullhere) {
         fclose_wrapper(resfile);
         break;
