@@ -141,7 +141,7 @@ template <class T> struct lua_table {
   int max_index() const {
      return mx_size > static_cast<size_t>(INT_MAX)
         ? INT_MAX
-        : static_cast<int>(mx_size);;
+        : static_cast<int>(mx_size);
   }
 
   size_t dense_length() const {
