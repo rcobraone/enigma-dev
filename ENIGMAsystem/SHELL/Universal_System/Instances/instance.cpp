@@ -62,11 +62,33 @@ void instance_deactivate_all(bool notme) {
           ? enigma::instance_event_iterator->inst
           : NULL;
 	
-    for (enigma::iterator it = enigma::instance_list_first(); it; ++it) {
-        if (notme && self && *it == self) continue;
-        (*it)->deactivate();
-        enigma::instance_deactivated_list.insert(inode_pair((*it)->id,*it));
+  enigma::iterator it = enigma::instance_list_first();
+  while (it) {
+    enigma::object_basic* const inst = *it;
+
+    if (notme && self && inst == self) {
+      ++it;
+      continue;
     }
+
+    const int id = inst->id;
+    inst->deactivate();
+
+    // unlink() updates registered iterators when it removes a node.
+    const bool moved = it && *it != inst;
+
+    // Do not register an instance that was removed during deactivate().
+    const auto live = enigma::instance_list.find(id);
+    if (live != enigma::instance_list.end() &&
+        live->second->inst == inst) {
+      enigma::instance_deactivated_list.insert(inode_pair(id, inst));
+    }
+
+    if (!moved && it) {
+      ++it;
+    }
+
+  }
 }
 
 void instance_activate_all() {
@@ -83,10 +105,25 @@ void instance_activate_all() {
 }
 
 void instance_deactivate_object(int obj) {
-    for (enigma::iterator it = enigma::fetch_inst_iter_by_int(obj); it; ++it) {
-        (*it)->deactivate();
-        enigma::instance_deactivated_list.insert(inode_pair((*it)->id,*it));
+  enigma::iterator it = enigma::fetch_inst_iter_by_int(obj);
+  while (it) {
+    enigma::object_basic* const inst = *it;
+    const int id = inst->id;
+
+    inst->deactivate();
+
+    const bool moved = it && *it != inst;
+
+    const auto live = enigma::instance_list.find(id);
+    if (live != enigma::instance_list.end() &&
+        live->second->inst == inst) {
+      enigma::instance_deactivated_list.insert(inode_pair(id, inst));
     }
+
+    if (!moved && it) {
+      ++it;
+    }
+  }
 }
 
 void instance_activate_object(int obj) {
@@ -115,8 +152,12 @@ void instance_destroy(int id, bool dest_ev)
       if (dest_ev)
           who->myevent_destroy();
       if (enigma::cleanups.find(who) != enigma::cleanups.end())
+        {
+          if (it && *it == who)
+            ++it;
+     
         continue;
-          
+	 } 
           who->unlink();
         // unlink() moves iterators to the next instance.
         continue;     
@@ -146,7 +187,8 @@ void instance_destroy()
         MESSAGE_TYPE::M_ERROR
     );
     if (!enigma::instance_event_iterator ||
-        a != enigma::instance_event_iterator->inst)
+    if (a != (enigma::instance_event_iterator
+                  ? enigma::instance_event_iterator->inst : NULL))
     DEBUG_MESSAGE(
         "instance_destroy(): event iterator changed unexpectedly.",
         MESSAGE_TYPE::M_ERROR
@@ -175,11 +217,11 @@ enigma::instance_t instance_last(int obj) {
   if (obj < 0 ||
       static_cast<size_t>(obj) >= enigma::object_idmax) {
     return noone;
+  }
 
-      return (enigma::objects[obj].count > 0)
-
-        ? static_cast<int>(enigma::objects[obj].prev->inst->id)
-        : noone;
+  return (enigma::objects[obj].count > 0)
+      ? static_cast<int>(enigma::objects[obj].prev->inst->id)
+      : noone;
 }
 
 int instance_number(int obj)
