@@ -61,13 +61,6 @@ Sprite sprite_add_helper(std::string filename, int imgnumb, bool precise, bool t
     return Sprite();
   }
 
-  if (imgs.size() == 1 &&
-      static_cast<unsigned>(imgnumb) > imgs[0].w) {
-    DEBUG_MESSAGE(
-        "ERROR - Sprite image count exceeds image width.",
-        MESSAGE_TYPE::M_USER_ERROR);
-    return Sprite();
-  }
   
   unsigned cellwidth = ((imgs.size() > 1) ? imgs[0].w : imgs[0].w / imgnumb);
   Sprite ns(cellwidth, imgs[0].h, x_offset, y_offset);
@@ -179,8 +172,24 @@ int sprite_add(std::string filename, int imgnumb, bool transparent, bool smooth,
 
 bool sprite_replace(int ind, std::string filename, int imgnumb, bool precise, bool transparent, bool smooth, bool preload,
                     int x_offset, int y_offset, bool free_texture, bool mipmap) {
-  if (free_texture) sprites.get(ind).FreeTextures();
-  return (sprites.replace(ind, sprite_add_helper(filename, imgnumb, precise, transparent, smooth, preload, x_offset, y_offset, mipmap)) != -1);
+  if (!sprites.exists(ind)) {
+    return false;
+  }
+
+  Sprite replacement = sprite_add_helper(
+      filename, imgnumb, precise, transparent, smooth,
+      preload, x_offset, y_offset, mipmap
+  );
+
+  if (replacement.SubimageCount() == 0) {
+    return false;
+  }
+
+  if (free_texture) {
+    sprites.get(ind).FreeTextures();
+  }
+
+  return sprites.replace(ind, std::move(replacement)) != -1;;
 }
 
 bool sprite_replace(int ind, std::string filename, int imgnumb, bool transparent, bool smooth, int x_offset, int y_offset,
