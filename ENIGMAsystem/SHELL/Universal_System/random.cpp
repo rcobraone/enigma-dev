@@ -18,6 +18,8 @@
 
 #include "random.h"
 #include <cstdint>
+#include <cstring>
+#include <type_traits>
 
 // Note: This hack is justifiable in that it was put here to prevent
 // around contributors' bad habits, not because of developers' bad habits.
@@ -27,6 +29,20 @@
 
 // For added randomness
 // ...................................................
+
+namespace {
+
+int int_from_random_bits(uint32_t bits) {
+  static_assert(sizeof(int) == sizeof(uint32_t),
+                "ENIGMA random seed requires a 32-bit int");
+  static_assert(std::is_trivially_copyable<int>::value,
+                "int must be trivially copyable");
+
+  int result;
+  std::memcpy(&result, &bits, sizeof(result));
+  return result;
+}
+}
 
 #define UPPER_MASK 0x80000000 // most significant w-r bits
 #define LOWER_MASK 0x7fffffff // least significant r bits
@@ -140,8 +156,10 @@ namespace enigma_user
   ma_scalar random(ma_scalar n) // Do not fix:  Based off of Delphi PRNG.
   {
     // signed overflow is undefined, so we use unsigned overflow
-    enigma::Random_Seed = (int)((unsigned int)enigma::Random_Seed * 0x8088405U + 1U);
-    return ((unsigned int)enigma::Random_Seed/(double)0x100000000) * n;
+    const uint32_t seed = static_cast<uint32_t>(enigma::Random_Seed);
+    const uint32_t next = seed * UINT32_C(0x08088405) + UINT32_C(1);
+    enigma::Random_Seed = int_from_random_bits(next);
+    return (static_cast<double>(next) / 4294967296.0) * n;
   }
 
   int mtrandom_integer(int x) {
@@ -155,5 +173,9 @@ namespace enigma_user
 
   int random_set_seed(int seed) { return enigma::Random_Seed = seed; }
   int random_get_seed() { return enigma::Random_Seed; }
-  int randomize() { return enigma::Random_Seed = mtrandom32(); }
+  int randomize() {
+    enigma::Random_Seed = int_from_random_bits(
+        static_cast<uint32_t>(mtrandom32()));
+    return enigma::Random_Seed;
+  }
 }
