@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <cstdlib>
+#include <cctype>
 #include <climits>
 #include <vector>
 #include "var4.h"
@@ -49,9 +50,18 @@ tstring widen(const string &str) {
   if (wchar_count > static_cast<size_t>(INT_MAX))
   return L"";
   vector<wchar_t> buf(wchar_count);
-  wchar_count = (size_t)MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf.data(), (int)wchar_count);
+  wchar_count = static_cast<size_t>(
+      MultiByteToWideChar(
+          CP_UTF8,
+          0,
+          str.c_str(),
+          -1,
+          buf.data(),
+          static_cast<int>(buf.size())
+      )
+  );
   if (!wchar_count) return L"";
-  return tstring{buf.data(), wchar_count};
+  return tstring{buf.data(), wchar_count - 1};
 }
 
 string shorten(tstring str) {
@@ -87,7 +97,9 @@ static const std::string base64_chars =
 namespace enigma_user {
 
 bool is_base64(unsigned char c) {
-  return (isalnum(c) || (c == '+') || (c == '/'));
+  return std::isalnum(static_cast<unsigned char>(c)) ||
+         c == '+' ||
+         c == '/';
 }
 
 string base64_encode(string const& str) {
