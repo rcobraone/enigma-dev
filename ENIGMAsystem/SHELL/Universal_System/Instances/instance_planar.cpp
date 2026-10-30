@@ -39,8 +39,9 @@ enigma::instance_t instance_nearest(int x,int y,int obj,bool notme)
   int retid = noone;
   double xl, yl;
 
-  enigma::object_basic *self = enigma::instance_event_iterator
-                                   ? enigma::instance_event_iterator->inst : nullptr;
+  enigma::object_basic *self =
+      enigma::instance_event_iterator
+          ? enigma::instance_event_iterator->inst : nullptr;
   for (enigma::iterator it = enigma::fetch_inst_iter_by_int(obj); it; ++it)
   {
     if (notme && self && *it == self) continue;
@@ -63,8 +64,9 @@ enigma::instance_t instance_furthest(int x,int y,int obj,bool notme)
   double xl,yl;
   double dstclc;
 
-  enigma::object_basic *self = enigma::instance_event_iterator
-                                   ? enigma::instance_event_iterator->inst : nullptr;
+  enigma::object_basic *self =
+      enigma::instance_event_iterator
+          ? enigma::instance_event_iterator->inst : nullptr;
 
   for (enigma::iterator it = enigma::fetch_inst_iter_by_int(obj); it; ++it)
   {
