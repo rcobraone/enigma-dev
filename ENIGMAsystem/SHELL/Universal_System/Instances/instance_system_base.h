@@ -89,7 +89,10 @@ namespace enigma
       instance_other = push_other;
     }
     iterator_level(inst_iter* push_to):
-        iterator_level(push_to, instance_event_iterator->inst) {}
+        iterator_level(push_to,
+                       instance_event_iterator
+                           ? instance_event_iterator->inst
+                           : nullptr) {}
     ~iterator_level() {
       instance_event_iterator = stored_it;
       instance_other = stored_other;
