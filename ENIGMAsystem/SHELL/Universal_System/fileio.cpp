@@ -25,6 +25,8 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <cstdint>
+#include <limits>
 
 #ifdef DEBUG_MODE
 #define try_io_and_print(f) print_and_clear_fs_status(__FUNCTION__, f);
@@ -129,10 +131,14 @@ void file_text_writeln(int fileid, const std::string& str) {
 // Reads a string from the file with the given file id and returns this string. A string ends at the end of line.
 std::string file_text_read_string(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return {};
+  auto& fs = enigma::files.get(fileid).fs;
   std::string line;
-  if (std::getline(enigma::files.get(fileid).fs, line)) {
-    enigma::files.get(fileid).fs.unget();
-    try_io_and_print(enigma::files.get(fileid))
+  while (true) {
+  const auto next = fs.peek();	  
+  if (next == std::char_traits<char>::eof() || next == '\n') {
+    break;
+  }
+    line.push_back(static_cast<char>(fs.get()));
   }
   return line;
 }
@@ -154,7 +160,11 @@ std::string file_text_read_all(int fileid) {
 
 bool file_text_eoln(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return true;
-  return (static_cast<char>(enigma::files.get(fileid).fs.peek()) == '\n' || enigma::files.get(fileid).fs.eof());
+auto& fs = enigma::files.get(fileid).fs;
+const auto next = fs.peek();
+
+return next == '\n' ||
+       next == std::char_traits<char>::eof();
 }
 
 double file_text_read_real(int fileid) { // Reads a real value from the file and returns this value.
@@ -218,22 +228,56 @@ size_t file_bin_size(int fileid) {
   auto& fs = enigma::files.get(fileid).fs;
   if (!fs.is_open()) return 0;
 
-  const std::streampos currPos = fs.tellg();
-  if (currPos < 0)
-    return 0;
-  fs.seekg(0, std::ios::end);
-  const std::streampos endPos = fs.tellg();
-  if (endPos < 0) {
-    fs.clear();
-    fs.seekg(currPos);
-    return 0;
-  }
+fs.clear();
+std::streampos currPos = fs.tellg();
 
-  const size_t length = static_cast<size_t>(endPos);
+bool use_output = false;
+if (currPos == std::streampos(-1)) {
   fs.clear();
-  fs.seekg(currPos);
-  try_io_and_print(enigma::files.get(fileid))
-  return length;
+  currPos = fs.tellp();
+  use_output = true;
+}
+if (currPos == std::streampos(-1)) {
+  fs.clear();
+  return 0;
+}
+fs.clear();
+if (use_output) {
+  fs.seekp(0, std::ios::end);
+} else {
+  fs.seekg(0, std::ios::end);
+}
+	  
+if (!fs) {	  
+  fs.clear();
+  if (use_output) fs.seekp(currPos);
+  else fs.seekg(currPos);
+   return 0;
+ }
+
+const std::streampos endPos =
+    use_output ? fs.tellp() : fs.tellg();
+
+  fs.clear();
+if (use_output) fs.seekp(currPos);
+
+else fs.seekg(currPos);
+if (endPos == std::streampos(-1) || !fs) {
+  fs.clear();
+  return 0;
+}
+const std::streamoff length = endPos;
+
+if (length < 0 ||
+    static_cast<std::uintmax_t>(length) >
+        static_cast<std::uintmax_t>(
+            std::numeric_limits<size_t>::max())) {
+  return 0;
+}
+
+try_io_and_print(enigma::files.get(fileid))
+
+return static_cast<size_t>(length);
 }
 
 // Returns the current position (in bytes; 0 is the first position) of the file with the given file id.
