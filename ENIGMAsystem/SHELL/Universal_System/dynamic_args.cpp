@@ -18,19 +18,38 @@
 #include "var4.h"
 #include "dynamic_args.h"
 #include <algorithm>
+#include <limits>
+#include <stdexcept>
 #include <vector>
+
 using namespace std;
 using namespace enigma;
 
 #define v(argv) (*(vector<variant>*)argv)
 
-varargs& varargs::operator,(variant x) { v(argv).push_back(x); argc++; return *this; }
+varargs& varargs::operator,(variant x) {
+  auto& arguments = v(argv);
+
+  if (arguments.size() >=
+      static_cast<size_t>(std::numeric_limits<int>::max())) {
+    throw std::length_error("ENIGMA: too many dynamic arguments");
+  }
+
+  arguments.push_back(x);
+  argc = static_cast<int>(arguments.size());
+  return *this;
+}
 void varargs::reverse() { std::reverse(v(argv).begin(),v(argv).end()); }
 void varargs::sort() { std::sort(v(argv).begin(),v(argv).end()); }
 variant varargs::get(int i) const {
-  if (i < 0 || static_cast<size_t>(i) >= v(argv).size())
+  if (i < 0)
     return variant();
-  return v(argv)[static_cast<size_t>(i)];
+const auto& arguments = v(argv);
+const auto index = static_cast<size_t>(i);
+
+if (index >= arguments.size()) return variant();
+
+return arguments[index];
 }
 varargs::varargs(): argc(0), argv(new vector<variant>) {}
 varargs::varargs(variant x): argc(1), argv(new vector<variant>) { v(argv).push_back(x); }
