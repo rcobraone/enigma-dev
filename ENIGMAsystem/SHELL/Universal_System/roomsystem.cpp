@@ -81,6 +81,10 @@ namespace enigma
   void follow_object(int vob, size_t vc)
   {
     using namespace enigma_user;
+    if (vc >= 8) {
+      return;
+    }
+
     object_basic *instanceexists = fetch_instance_by_int(vob);
 
     if (instanceexists)
@@ -842,7 +846,8 @@ int window_views_mouse_get_x() {
   sx = (window_get_width() - window_get_region_width_scaled()) / 2;
   int x = (window_mouse_get_x() - sx) * ((gs_scalar)window_get_region_width() / (gs_scalar)window_get_region_width_scaled());
   if (view_enabled) {
-    if (view_wport[view_current] == 0)
+    if (view_current < 0 || view_current >= 8 ||
+        view_wport[view_current] == 0)
       return x;
     x = view_xview[view_current]+((x-view_xport[view_current])/(double)view_wport[view_current])*view_wview[view_current];
   }
