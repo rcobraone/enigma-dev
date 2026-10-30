@@ -45,6 +45,10 @@ namespace enigma {
 
   //Make speed work -- same as above, but rval.d and reflex1 are switched.
   void speedv::function(const variant&) {
+    if (!std::isfinite(rval.d) || !std::isfinite(*dir)) {
+      return;
+    }
+  
     *hspd = rval.d * std::cos(*dir * kPi / 180.0);
     *vspd = rval.d * -std::sin(*dir * kPi / 180.0);
   }
@@ -60,7 +64,9 @@ namespace enigma {
         const double angle = std::atan2(rval.d, *hspd);
         if (!std::isfinite(angle))
             return;
-        *dir = int((180.0 + 180.0 * (1.0 - angle / kPi)) + 0.5) % 360;
+        *dir = static_cast<int>(
+            180.0 + 180.0 * (1.0 - angle / kPi) + 0.5
+        ) % 360;
         *spd = std::hypot(rval.d, *hspd);
     }
     else
