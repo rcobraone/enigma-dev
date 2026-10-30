@@ -41,8 +41,10 @@ namespace enigma_user {
 namespace enigma
 {
   inst_iter::inst_iter(object_basic* i,inst_iter *n = NULL,inst_iter *p = NULL):
-      inst(i), next(n), prev(p) {}
-  inst_iter::inst_iter() {}
+      inst(i), next(n), prev(p), dead(false) {}
+  inst_iter::inst_iter():
+  
+  inst(NULL), next(NULL), prev(NULL), dead(false) {}
 
   objectid_base::objectid_base(): inst_iter(NULL,NULL,this), count(0) {}
   event_iter::event_iter(string n): inst_iter(NULL,NULL,this), name(n) {}
@@ -161,7 +163,6 @@ namespace enigma
       (*it)->handle_unlink(dd);
     }
   }
-
 
   /*------Iterator methods ---------------------------------------------------*\
   \*--------------------------------------------------------------------------*/
@@ -289,7 +290,7 @@ namespace enigma
     {
       case self:
       case local:
-        return instance_event_iterator->inst
+        return instance_event_iterator && instance_event_iterator->inst
             ? iterator(instance_event_iterator->inst)
             : iterator();
       case other:  return instance_other ? iterator(instance_other) : iterator();
@@ -339,6 +340,10 @@ namespace enigma
   //Link in an instance
   pinstance_list_iterator link_instance(object_basic* who)
   {
+    if (!who) {
+      return NULL;
+    }
+	  
     inst_iter *ins = new inst_iter(who);
     
     pair<iliter,bool> it = instance_list.insert(inode_pair(who->id,ins));
