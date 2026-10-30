@@ -56,7 +56,14 @@ Background background_add_helper(std::string filename, bool transparent, bool sm
 
   // If background is transparent, set the alpha to zero for pixels that should be
   // transparent from lower left pixel color
-  if (transparent) enigma::image_remove_color(imgs[0]);
+  if (transparent) enigma::image_remove_color(imgs[0]); 
+
+  if (nb.textureID < 0 || fullwidth == 0 || fullheight == 0) {
+    DEBUG_MESSAGE(
+        "ERROR - Unable to create background texture.",
+        MESSAGE_TYPE::M_ERROR);
+    return Background();
+  }
 
   nb.textureID = graphics_create_texture(imgs[0], mipmap, &fullwidth, &fullheight);
   nb.textureBounds = TexRect(0, 0, static_cast<gs_scalar>(imgs[0].w) / fullwidth, static_cast<gs_scalar>(imgs[0].h) / fullheight);
@@ -105,8 +112,23 @@ int background_create_color(unsigned w, unsigned h, int col, bool preload) {
 
 bool background_replace(int back, std::string filename, bool transparent, bool smooth, bool preload, bool free_texture,
                         bool mipmap) {
-  backgrounds.get(back).FreeTexture();
-  return (backgrounds.replace(back, background_add_helper(filename, transparent, smooth, preload, mipmap)) != -1);
+  if (!backgrounds.exists(back)) {
+    return false;
+  }
+
+  Background replacement = background_add_helper(
+      filename, transparent, smooth, preload, mipmap
+  );
+
+  if (replacement.textureID < 0) {
+    return false;
+  }
+
+  if (free_texture) {
+    backgrounds.get(back).FreeTexture();
+  }
+
+  return backgrounds.replace(back, std::move(replacement)) != -1;
 }
 
 void background_save(int back, std::string fname) {
@@ -128,7 +150,14 @@ void background_save(int back, std::string fname) {
 }
 
 void background_delete(int back, bool free_texture) {
-  backgrounds.get(back).FreeTexture();
+  if (!backgrounds.exists(back)) {
+    return;
+  }
+
+  if (free_texture) {
+    backgrounds.get(back).FreeTexture();
+  }
+
   backgrounds.destroy(back);
 }
 
