@@ -111,7 +111,7 @@ void file_text_write_string(int fileid, const std::string& str) {
 // Write the real value to the file with the given file id.
 void file_text_write_real(int fileid, double x) {
   if (!enigma::valid_file_handle(fileid)) return;
-  enigma::files.get(fileid).fs << " " << x << std::setprecision(16);
+  enigma::files.get(fileid).fs << std::setprecision(16) << " " << x;
   try_io_and_print(enigma::files.get(fileid))
 }
 
@@ -202,7 +202,22 @@ int file_bin_open(const std::string& fname, int mode) {
   switch (mode) {
     case 0: return enigma::file_open(fname, std::ios::in  | std::ios::binary);
     case 1: return enigma::file_open(fname, std::ios::out | std::ios::binary);
-    case 2: return enigma::file_open(fname, std::ios::in  | std::ios::out | std::ios::binary);
+    case 2: {
+      int fileid = enigma::file_open(
+          fname, std::ios::in | std::ios::out | std::ios::binary);
+
+      if (fileid >= 0) return fileid;
+
+      // Create without truncating an existing file.
+      {
+        std::ofstream create_file(
+            fname, std::ios::binary | std::ios::app);
+        if (!create_file.is_open()) return -1;
+      }
+
+      return enigma::file_open(
+          fname, std::ios::in | std::ios::out | std::ios::binary);
+    }
     default: return -1;
   }
 }
@@ -225,6 +240,7 @@ void file_bin_close(int fileid) {
 // Returns the size (in bytes) of the file with the given file id.
 size_t file_bin_size(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return 0;
+  
   auto& fs = enigma::files.get(fileid).fs;
   if (!fs.is_open()) return 0;
 
@@ -283,12 +299,31 @@ return static_cast<size_t>(length);
 // Returns the current position (in bytes; 0 is the first position) of the file with the given file id.
 size_t file_bin_position(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return 0;
-  const std::streampos position = enigma::files.get(fileid).fs.tellg();
-  if (position < 0) {
-    try_io_and_print(enigma::files.get(fileid))
-    return 0;
+  auto& fs = enigma::files.get(fileid).fs;
+  if (!fs.is_open()) return 0;
+    fs.clear();
+   +std::streampos position = fs.tellg();
+
+if (position == std::streampos(-1)) {
+  fs.clear();
+  position = fs.tellp();
   }
-  return static_cast<size_t>(position);
+if (position == std::streampos(-1)) {
+  fs.clear();
+  return 0;
+}
+
+const std::streamoff offset = position;
+
+if (offset < 0 ||
+    static_cast<std::uintmax_t>(offset) >
+        static_cast<std::uintmax_t>(
+            std::numeric_limits<size_t>::max())) {
+  fs.clear();
+  return 0;
+}
+
+return static_cast<size_t>(offset);
 }
 
 // Moves the current position of the file to the indicated position. To append to a file move the position to the size of the file before writing.
