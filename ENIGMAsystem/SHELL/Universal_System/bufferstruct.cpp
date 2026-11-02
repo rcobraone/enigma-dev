@@ -48,26 +48,30 @@ unsigned BinaryBuffer::GetSize() { return data.size(); }
 void BinaryBuffer::Resize(unsigned size) { data.resize(size, 0); }
 
 void BinaryBuffer::Seek(unsigned offset) {
-  if (GetSize() == 0) {
+  const unsigned buffer_size = GetSize();
+
+  if (buffer_size == 0) {
     position = 0;
     return;
   }
 
-  position = offset;
-  while (position >= GetSize()) {
-    switch (type) {
-      case enigma_user::buffer_grow:
-        if (position == std::numeric_limits<unsigned>::max())
-          return;      
-        Resize(position + 1);
-        return;
-      case enigma_user::buffer_wrap:
-        position %= GetSize();
-        return;
-      default:
-        position = GetSize() - (position - GetSize());
-        return;
-    }
+  switch (type) {
+    case enigma_user::buffer_grow:
+      if (offset >= buffer_size) {
+        if (offset == std::numeric_limits<unsigned>::max())
+          return;
+        Resize(offset + 1);
+      }
+      position = offset;
+      return;
+
+    case enigma_user::buffer_wrap:
+      position = offset % buffer_size;
+      return;
+
+    default:
+      position = std::min(offset, buffer_size - 1);
+      return;
   }
 }
 
@@ -235,21 +239,40 @@ void buffer_save_ext(int buffer, string filename, unsigned offset, unsigned size
           : 0;
 
   switch (binbuff->type) {
-    case buffer_wrap:
-      if (size > 0 && available > 0) {
-        const unsigned first = std::min(size, available);
-        myfile.write(
-            reinterpret_cast<const char*>(binbuff->data.data() + offset),
-            static_cast<std::streamsize>(first));
+    case buffer_wrap: {
+      const size_t buffer_size = binbuff->data.size();
 
-        if (size > first && !binbuff->data.empty()) {
-          const unsigned second = size - first;
-          myfile.write(
-              reinterpret_cast<const char*>(binbuff->data.data()),
-              static_cast<std::streamsize>(second));
-        }
+      if (size == 0 || buffer_size == 0 || available == 0)
+        break;
+
+      size_t remaining = size;
+      size_t current_offset = offset;
+      const size_t max_write = static_cast<size_t>(
+          (std::numeric_limits<std::streamsize>::max)());
+
+      while (remaining > 0) {
+        const size_t chunk = std::min({
+            remaining,
+            buffer_size - current_offset,
+            max_write
+        });
+
+        if (chunk == 0)
+          break;
+
+        myfile.write(
+            reinterpret_cast<const char*>(
+                binbuff->data.data() + current_offset),
+            static_cast<std::streamsize>(chunk));
+
+        if (!myfile)
+          break;
+
+        remaining -= chunk;
+        current_offset = 0;
       }
       break;
+   }
     case buffer_grow:
       //TODO: Might need to use min(size, binbuff->GetSize()); for the last parameter.
       //Depends on whether Stupido will write 0's to fill in the entire size you gave it even though the data isn't that big.
@@ -341,44 +364,104 @@ void buffer_load_ext(int buffer, string filename, unsigned offset) {
   }
   myfile.close();
   
-   // A grow buffer may be extended to the requested offset.
-  // Do not calculate buffer_size - offset before validating the offset.
-  if (binbuff->type == buffer_grow && offset > binbuff->data.size()) {
-    binbuff->data.resize(static_cast<size_t>(offset));
-  }
+  const size_t start = static_cast<size_t>(offset);
+  const size_t data_size = data.size();
+
+  if (data_size == 0)
+    return;
+
+  if (binbuff->type == buffer_grow) {
+    if (data_size > std::numeric_limits<size_t>::max() - start)
+      return;
+
+    const size_t required_size = start + data_size;
+
+    if (required_size > binbuff->data.max_size())
+      return;
+
+    if (required_size > binbuff->data.size())
+      binbuff->data.resize(required_size, 0);
+
+    std::copy(data.begin(), data.end(),
+              binbuff->data.begin() + start);
+    return;
+   }
 
   const size_t buffer_size = binbuff->data.size();
-  if (static_cast<size_t>(offset) > buffer_size) {
+
+  if (buffer_size == 0)
+    return;
+
+  if (binbuff->type == buffer_wrap) {
+    size_t position = start % buffer_size;
+
+    for (size_t i = 0; i < data_size; ++i) {
+      binbuff->data[position] =
+          static_cast<unsigned char>(data[i]);
+
+      ++position;
+      if (position == buffer_size)
+        position = 0;
+    }
     return;
   }
 
+  if (start >= buffer_size)
+    return;
 
+  const size_t writable =
+      std::min(data_size, buffer_size - start);
+
+  std::copy_n(data.begin(), writable,
+              binbuff->data.begin() + start);
+}
 
 void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned size) {
   get_buffer(binbuff, buffer);
   if (size > std::numeric_limits<unsigned>::max() - offset)
     return;
 
-  unsigned nsize = offset + size;
-  
-  if (binbuff->GetSize() < nsize && binbuff->type == buffer_grow) {
-    binbuff->data.resize(nsize);
-  }
-  unsigned pos = offset;
   const unsigned type_size = buffer_sizeof(type);
-  for (unsigned i = 0; i < type_size; i++) {
-    if (pos >= binbuff->GetSize())
-      break;
+  if (type_size == 0)
+    return;
 
-	binbuff[pos] = value[i];  
-    ++pos;
+  const size_t start = static_cast<size_t>(offset);
+  const size_t count = static_cast<size_t>(size);
+
+  if (binbuff->type == buffer_grow) {
+    if (count > std::numeric_limits<size_t>::max() - start)
+      return;
+
+    const size_t required_size = start + count;
+    if (required_size > binbuff->data.max_size())
+      return;
+
+    if (required_size > binbuff->data.size())
+      binbuff->data.resize(required_size, 0);
   }
+
+  const size_t buffer_size = binbuff->data.size();
+  if (buffer_size == 0 || start >= buffer_size)
+    return;
+
+  size_t writable = count;
+  if (binbuff->type == buffer_wrap) {
+    for (size_t i = 0; i < writable; ++i) {
+      const size_t index = (start + i) % buffer_size;
+      binbuff->data[index] =
+          static_cast<unsigned char>(value[i % type_size]);
+    }
+    return;
+  }
+
+  writable = std::min(writable, buffer_size - start);
+  for (size_t i = 0; i < writable; ++i)
+    binbuff->data[start + i] =
+        static_cast<unsigned char>(value[i % type_size]);
 }
   
 void *buffer_get_address(int buffer) {
-  if (buffer < 0 ||
-      static_cast<size_t>(buffer) >= enigma::buffers.size() ||
-      !enigma::buffers[buffer]) {
+  if (!enigma::buffer_valid(buffer)) {
     #ifdef DEBUG_MODE
     DEBUG_MESSAGE("Attempting to access non-existing buffer " + toString(buffer), MESSAGE_TYPE::M_USER_ERROR);
     #endif   
@@ -386,7 +469,10 @@ void *buffer_get_address(int buffer) {
   }
 
   enigma::BinaryBuffer *binbuff = enigma::buffers[buffer];
-  return reinterpret_cast<void *>(binbuff->data.data());
+  if (binbuff->data.empty())
+    return nullptr;
+
+  return static_cast<void *>(binbuff->data.data());
 }
 
 unsigned buffer_get_size(int buffer) {
@@ -425,11 +511,24 @@ void buffer_set_surface(int buffer, int surface, int mode, unsigned offset, int 
       static_cast<std::uint64_t>(wid) *
       static_cast<std::uint64_t>(hgt);
 
-  if (buffer_get_size(buffer) == expected_size) {
-    enigma::graphics_push_texture_pixels(tex, wid, hgt, (unsigned char *)buffer_get_address(buffer));
-  } else { // execution can not continue safely with wrong buffer size
+  const size_t buffer_size =
+      static_cast<size_t>(buffer_get_size(buffer));
+  const size_t start = static_cast<size_t>(offset);
+
+  if (start > buffer_size ||
+      expected_size > buffer_size - start ||
+      expected_size > std::numeric_limits<size_t>::max()) {
     DEBUG_MESSAGE("Buffer allocated with wrong length!", MESSAGE_TYPE::M_WARNING);
+    return;
   }
+
+  unsigned char* pixels =
+      static_cast<unsigned char*>(buffer_get_address(buffer));
+
+  if (!pixels)
+    return;
+
+  enigma::graphics_push_texture_pixels(tex, wid, hgt, pixels + start);  
 }
 
 void buffer_resize(int buffer, unsigned size) {
