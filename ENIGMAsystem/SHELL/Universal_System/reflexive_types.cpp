@@ -35,7 +35,7 @@ namespace enigma {
     if (!std::isfinite(rval.d)) {
       return;
     }
-    rval.d = fmod(rval.d, 360.0);
+    rval.d = std::fmod(rval.d, 360.0);
     if(rval.d < 0.0){
       rval.d += 360.0;
     }
@@ -56,42 +56,46 @@ namespace enigma {
   //Make hspeed work
   void hspeedv::function(const variant &oldval) {
     if (rval.d == oldval.rval.d)
-    { // If no changes, return, don't make potentially negative speed non-negative.
-        return;
-    }
-    else if (varnz(rval.d) or varnz(*vspd))
     {
-        const double angle = std::atan2(rval.d, *hspd);
-        if (!std::isfinite(angle))
-            return;
-        *dir = static_cast<int>(
-            180.0 + 180.0 * (1.0 - angle / kPi) + 0.5
-        ) % 360;
-        *spd = std::hypot(rval.d, *hspd);
+      return;
+    }
+    else if (varnz(rval.d) || varnz(*vspd))
+    {
+      const double angle = std::atan2(-(*vspd), rval.d);
+      if (!std::isfinite(angle)) return;
+
+      double direction = angle * 180.0 / kPi;
+      if (direction < 0.0) direction += 360.0;
+
+      *dir = static_cast<int>(std::lround(direction)) % 360;
+      *spd = std::hypot(rval.d, *vspd);
     }
     else
-    { // If both set to zero, make speed zero. Direction not set.
-        *spd = 0.0;
+    {
+      *spd = 0.0;
     }
   }
 
   //Make vspeed work -- Same as above, except the arguments to atan2 are reversed
   void vspeedv::function(const variant &oldval) {
     if (rval.d == oldval.rval.d)
-    { // If no changes, return, don't make potentially negative speed non-negative.
-        return;
-    }
-    else if (varnz(rval.d) or varnz(*hspd))
     {
-        const double angle = atan2(rval.d, *hspd);
-        if (!std::isfinite(angle))
-            return;
-        *dir = int((180.0+180.0*(1.0-angle/M_PI))+0.5)%360; //The +0.5 rounds it
-        *spd = hypot(rval.d,*hspd);
+      return;
+    }
+    else if (varnz(rval.d) || varnz(*hspd))
+    {
+      const double angle = std::atan2(-rval.d, *hspd);
+      if (!std::isfinite(angle)) return;
+
+      double direction = angle * 180.0 / kPi;
+      if (direction < 0.0) direction += 360.0;
+
+      *dir = static_cast<int>(std::lround(direction)) % 360;
+      *spd = std::hypot(*hspd, rval.d);
     }
     else
-    { // If both set to zero, make speed zero. Direction not set.
-        *spd = 0.0;
+    {
+      *spd = 0.0;
     }
   }
 }
