@@ -35,9 +35,14 @@ namespace enigma_user {
 var array_create(size_t size, variant value) { return var(value, size); }
 var array_create_2d(size_t length, size_t height, variant value) { return var(value, length, height); }
 bool array_equals(const var& arr1, const var& arr2) {
-  if (arr1.array_len() != arr2.array_len()) return false;
-  for (int i = 0; i < arr1.array_len(); i++) {
-    if (arr1[i] != arr2[i]) return false;
+  const int length = arr1.array_len();
+
+  if (length != arr2.array_len())
+    return false;
+
+  for (int i = 0; i < length; ++i) {
+    if (arr1[i] != arr2[i])
+      return false;
   }
   return true;
 }
