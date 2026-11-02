@@ -18,6 +18,7 @@
 
 #include "var4.h"
 #include "dynamic_args.h"
+#include "random.h"
 
 #include <limits>
 #include <algorithm> // min/max
@@ -257,9 +258,9 @@ namespace enigma_user
   }
 
   variant choose(const enigma::varargs& args) {
-	 if (args.argc <= 0)
+    if (args.argc <= 0)
       return variant();
 
-     return args.get(rand() % args.argc);
+    return args.get(random_integer(args.argc - 1));
   }
 }
