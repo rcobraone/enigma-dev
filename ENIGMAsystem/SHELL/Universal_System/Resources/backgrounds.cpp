@@ -40,7 +40,7 @@ using enigma::image_load;
 namespace {
 
 Background background_add_helper(std::string filename, bool transparent, bool smooth, bool preload, bool mipmap) {
-  unsigned fullwidth, fullheight;
+  unsigned fullwidth = 0, fullheight = 0;
   std::vector<RawImage> imgs = image_load(filename);
      
   Background nb;
@@ -58,14 +58,24 @@ Background background_add_helper(std::string filename, bool transparent, bool sm
   // transparent from lower left pixel color
   if (transparent) enigma::image_remove_color(imgs[0]); 
 
-  if (nb.textureID < 0 || fullwidth == 0 || fullheight == 0) {
+  nb.textureID = graphics_create_texture(
+      imgs[0], mipmap, &fullwidth, &fullheight);
+
+  if (nb.textureID < 0) {
     DEBUG_MESSAGE(
         "ERROR - Unable to create background texture.",
         MESSAGE_TYPE::M_ERROR);
     return Background();
   }
 
-  nb.textureID = graphics_create_texture(imgs[0], mipmap, &fullwidth, &fullheight);
+  if (fullwidth == 0 || fullheight == 0) {
+    nb.FreeTexture();
+    DEBUG_MESSAGE(
+        "ERROR - Invalid background texture dimensions.",
+        MESSAGE_TYPE::M_ERROR);
+    return Background();
+  }
+
   nb.textureBounds = TexRect(0, 0, static_cast<gs_scalar>(imgs[0].w) / fullwidth, static_cast<gs_scalar>(imgs[0].h) / fullheight);
 
   return nb;
