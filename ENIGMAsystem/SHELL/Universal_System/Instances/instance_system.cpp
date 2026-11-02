@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <math.h>
 #include <vector>
+#include <memory>
 #include <string>
 #include "Universal_System/var4.h"
 #include "Universal_System/reflexive_types.h"
@@ -57,8 +58,15 @@ namespace enigma
   set<iterator*> central_iterator_cache;
   typedef set<iterator*>::iterator central_iterator_cache_iterator;
 
-  object_basic* iterator::operator*()  const { return it->inst; }
-  object_basic* iterator::operator->() const { return it->inst; }
+  object_basic* iterator::operator*() const
+  {
+    return it ? it->inst : NULL;
+  }
+
+  object_basic* iterator::operator->() const
+  {
+    return it ? it->inst : NULL;
+  }
 
   void iterator::addme() {
     central_iterator_cache.insert(this);
@@ -79,7 +87,7 @@ namespace enigma
   }
 
   void iterator::handle_unlink(const inst_iter *dead) {
-    if (!it)
+    if (!it || !dead)
       return;
 
     if (it == dead) {
@@ -158,9 +166,13 @@ namespace enigma
 
   void update_iterators_for_destroy(const inst_iter* dd)
   {
+    if (!dd)
+      return;
+	  
     for (central_iterator_cache_iterator it = central_iterator_cache.begin();
          it != central_iterator_cache.end(); ++it) {
-      (*it)->handle_unlink(dd);
+      if (*it)
+        (*it)->handle_unlink(dd);
     }
   }
 
@@ -169,14 +181,25 @@ namespace enigma
 
   inst_iter *event_iter::add_inst(object_basic* ninst)
   {
-    inst_iter *a = new inst_iter(ninst,NULL,prev);
-    if (prev) prev->next = a; // If we have a final item, set its next node to this item.
-    else next = a; // Otherwise, set our first item to this item.
-    return prev = a; // Either way, our last item is this item now.
+    if (!ninst)
+      return NULL;
+
+    inst_iter *a = new inst_iter(ninst, NULL, prev);
+
+    if (prev)
+      prev->next = a;
+    else
+      next = a;
+
+    prev = a;
+    return a;
   }
 
   void event_iter::unlink(inst_iter* which)
   {
+    if (!which || which == this)
+      return;
+	  
     if (which->prev) which->prev->next = which->next;
     if (which->next) which->next->prev = which->prev;
     if (prev == which) prev = which->prev; // If our last item is this, decrement our last item.
@@ -186,10 +209,18 @@ namespace enigma
 
   inst_iter *objectid_base::add_inst(object_basic* ninst)
   {
-    inst_iter *a = new inst_iter(ninst,NULL,prev);
-    if (prev) prev->next = a;
-    else next = a;
-    return prev = a;
+    if (!ninst)
+      return NULL;
+
+    inst_iter *a = new inst_iter(ninst, NULL, prev);
+
+    if (prev)
+      prev->next = a;
+    else
+      next = a;
+
+    prev = a;
+    return a;
   }
 
   void unlink_object_id_iter(inst_iter* which, int oid)
@@ -250,7 +281,10 @@ namespace enigma
   iterator instance_list_first()
   {
     iliter a = instance_list.begin();
-    return a != instance_list.end() ? a->second : NULL;
+    if (a == instance_list.end() || !a->second)
+      return iterator();
+
+    return a->second;
   }
 
   extern size_t object_idmax;
@@ -271,15 +305,23 @@ namespace enigma
     }
 
     if (x < 100000)
-      return size_t(x) < object_idmax ? objects[x].next ? objects[x].next->inst : NULL : NULL;
+    {
+      if (static_cast<size_t>(x) >= object_idmax)
+        return NULL;
+
+      inst_iter *first = objects[x].next;
+      return first ? first->inst : NULL;
+    }
 
     iliter a = instance_list.find(x);
-    return a != instance_list.end() ? a->second->inst : NULL;
+    return a != instance_list.end() && a->second && a->second->inst
+        ? a->second->inst : NULL;
   }
   object_basic* fetch_instance_by_id(int x)
   {
     iliter a = instance_list.find(x);
-    return a != instance_list.end() ? a->second->inst : NULL;
+    return a != instance_list.end() && a->second && a->second->inst
+        ? a->second->inst : NULL;
   }
 
   iterator fetch_inst_iter_by_int(int x)
@@ -301,18 +343,23 @@ namespace enigma
     }
 
     if (x < 100000)// Object-index-based lookup
-      return static_cast<size_t>(x) < object_idmax
-          ? objects[x].next
-          : iterator();
+    {
+      if (static_cast<size_t>(x) >= object_idmax)
+        return iterator();
+
+      return objects[x].next;
+    }
 
     // ID-based lookup
     iliter a = instance_list.find(x);
-    return a != instance_list.end() ? iterator(a->second->inst) : iterator();
+    return a != instance_list.end() && a->second && a->second->inst
+        ? iterator(a->second->inst) : iterator();
   }
   iterator fetch_inst_iter_by_id(int x)
   {
     iliter a = instance_list.find(x);
-    return a != instance_list.end() ? iterator(a->second->inst) : iterator();
+    return a != instance_list.end() && a->second && a->second->inst
+        ? iterator(a->second->inst) : iterator();
   }
 
   iterator fetch_roominst_iter_by_id(int x)
@@ -320,7 +367,7 @@ namespace enigma
     //Check if it's a deactivated instance first.
     std::map<int,enigma::object_basic*>::iterator rIt = enigma::instance_deactivated_list.find(x);
     if (rIt!=enigma::instance_deactivated_list.end()) {
-      return iterator(rIt->second);
+      return rIt->second ? iterator(rIt->second) : iterator();
     }
 
     //Else, it's still live (or was null). Use normal dispatch.
@@ -340,49 +387,80 @@ namespace enigma
   //Link in an instance
   pinstance_list_iterator link_instance(object_basic* who)
   {
-    if (!who) {
+    if (!who)
       return NULL;
     }
 	  
-    inst_iter *ins = new inst_iter(who);
+    std::unique_ptr<inst_iter> ins(new inst_iter(who));
     
-    pair<iliter,bool> it = instance_list.insert(inode_pair(who->id,ins));
-    if (!it.second) {
-      delete ins;
+    pair<iliter,bool> it =
+        instance_list.insert(inode_pair(who->id, ins.get()));
+
+    if (!it.second)
+    {
       return new winstance_list_iterator(it.first);
     }
-    enigma_user::instance_id.push_back(who->id);
+    +
+
+    std::unique_ptr<winstance_list_iterator> result;
+
+    try
+    {
+      result.reset(new winstance_list_iterator(it.first));
+      enigma_user::instance_id.push_back(who->id);
+    }
+    catch (...)
+    {
+      instance_list.erase(it.first);
+      throw;
+    }
+
     if (it.first != instance_list.begin())
     {
-      iliter ib = it.first; ib--; // Find the previous iterator
+      iliter ib = it.first;  // Find the previous iterator
+      --ib;
       ins->prev = ib->second; // Link this to previous instance
-      ib->second->next = ins; // Link previous instance to this
+      ib->second->next = ins.get(); // Link previous instance to this
     }
-    else ins->prev = NULL; // Found nothing.
-
-    iliter in = it.first; in++; // Find next iterator
+    else 
+      ins->prev = NULL; // Found nothing.
+      
+    iliter in = it.first; // Find next iterator
+    ++in;
+    
     if (in != instance_list.end())
     {
       ins->next = in->second, // Link this to next instance
-      in->second->prev = ins; // Link next to this
+      in->second->prev = ins.get(); // Link next to this
     }
-    else ins->next = NULL;
+    else 
+      ins->next = NULL;
+      
+    ins.release();
     return new winstance_list_iterator(it.first);
   }
   inst_iter *link_obj_instance(object_basic* who, int oid)
   {
-    if (oid < 0 || static_cast<size_t>(oid) >= object_idmax)
+    if (!who)
       return NULL;  
-    objects[oid].count++;
-    return objects[oid].add_inst(who);
+    if (!who || oid < 0 ||
+        static_cast<size_t>(oid) >= object_idmax)
+      return NULL;  
+    inst_iter *result = objects[oid].add_inst(who);
+    if (result)
+      ++objects[oid].count;
+    return result;
   }
 
   void instance_iter_queue_for_destroy(object_basic* inst)
   {
+    if (!inst)
+      return;
+
     std::pair<std::set<object_basic*>::iterator, bool> result =
       enigma::cleanups.insert(inst);
     if (result.second)
-      enigma_user::instance_count--;
+     --enigma_user::instance_count;
   }
   
   void dispose_destroyed_instances()
@@ -394,7 +472,12 @@ namespace enigma
   
   void unlink_main(instance_list_iterator who)
   {
-    inst_iter *a = who->second;
+    if (who == instance_list.end() || !who->second || !who->second->inst)
+      return;
+  
+    inst_iter *a = who->second;   
+    if (!a || !a->inst)
+      return;
 
     std::deque<int>::iterator id_it =
         std::find(enigma_user::instance_id.begin(),
@@ -414,8 +497,14 @@ namespace enigma
   
   void unlink_main(pinstance_list_iterator whop)
   {
+    if (!whop || whop->w == instance_list.end() ||
+        !whop->w->second || !whop->w->second->inst)
+      return;
+	  
     inst_iter *a = whop->w->second;
-
+    if (!a || !a->inst)
+      return;
+    
     std::deque<int>::iterator id_it =
         std::find(enigma_user::instance_id.begin(),
                   enigma_user::instance_id.end(),
