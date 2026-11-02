@@ -25,7 +25,7 @@
 using namespace std;
 using namespace enigma;
 
-#define v(argv) (*(vector<variant>*)argv)
+#define v(argv) (*static_cast<vector<variant>*>(argv))
 
 varargs& varargs::operator,(variant x) {
   auto& arguments = v(argv);
@@ -80,7 +80,7 @@ varargs& varargs::operator=(varargs&& other) {
 
   // Allocate the replacement before changing ownership.
   vector<variant>* empty = new vector<variant>;   
-  delete (vector<variant>*)argv;
+  delete static_cast<vector<variant>*>(argv);
   argv = other.argv;
   argc = other.argc;
   other.argc = 0;
@@ -88,5 +88,5 @@ varargs& varargs::operator=(varargs&& other) {
   return *this;
 }
 
-varargs::~varargs() { delete (vector<variant>*)argv; }
+varargs::~varargs() { delete static_cast<vector<variant>*>(argv); }
 
