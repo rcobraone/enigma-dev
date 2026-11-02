@@ -39,8 +39,8 @@ namespace enigma
   {
     //Find the next instant (it may be right now).
     //Note: If a map lookup each tick is a performance hit, this value can be cached in the object itself with a tuple <timeline_id, timeline_pos, next_moment_iterator>
-    if (timeline_index<0 || timeline_index>=(int)timeline_moments_maps.size()) { return; }
-
+    if (timeline_index < 0 ||
+        static_cast<size_t>(timeline_index) >= timeline_moments_maps.size()) { return; }
     if (timeline_speed == 0)
      return;
     //Algorithm varies for +/- speed. Assume zero is positive (just for consistency).
@@ -90,8 +90,8 @@ namespace enigma
   void object_timelines::loop_curr_timeline() 
   {
     //Determine if we're past the last event. Note that no residual movement carries over; this effectively "resets to 0".
-    if (timeline_index<0 || timeline_index>=(int)timeline_moments_maps.size()) { return; }
-
+    if (timeline_index < 0 ||
+        static_cast<size_t>(timeline_index) >= timeline_moments_maps.size()) { return; }
     if (timeline_moments_maps[timeline_index].empty()) {
       timeline_position = 0;
       return;
