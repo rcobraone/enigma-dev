@@ -88,7 +88,12 @@ namespace enigma
 
       int subimages;
       if (!fread_wrapper(&subimages,4,1,exe)) return; //co//ut << "Subimages: " << subimages << endl;
-
+      if (subimages < 0 || width == 0 || height == 0) {
+        DEBUG_MESSAGE(
+            "Sprite load error: Invalid image dimensions or subimage count.",
+            MESSAGE_TYPE::M_ERROR);
+        return;
+      }
       Sprite spr(width, height, xorig, yorig);
       spr.SetBBox(bbl, bbt, bbr-bbl, bbb-bbt);
       
@@ -97,6 +102,30 @@ namespace enigma
         int unpacked;
         if (!fread_wrapper(&unpacked,4,1,exe)) return;
         if (unpacked < 0) return;
+
+        const size_t sw = static_cast<size_t>(width);
+        const size_t sh = static_cast<size_t>(height);
+
+        if (sw > std::numeric_limits<size_t>::max() / sh)
+          return;
+
+        const size_t pixel_count = sw * sh;
+
+        if (pixel_count >
+            std::numeric_limits<size_t>::max() / 4u)
+          return;
+
+        const size_t expected_size = pixel_count * 4u;
+
+        if (expected_size >
+            static_cast<size_t>((std::numeric_limits<int>::max)()) ||
+            static_cast<size_t>(unpacked) != expected_size) {
+          DEBUG_MESSAGE(
+              "Sprite load error: Invalid decompressed image size.",
+              MESSAGE_TYPE::M_ERROR);
+          return;
+        }
+
         unsigned int size;
         if (!fread_wrapper(&size,4,1,exe)) return; //co//ut << "Alloc size: " << size << endl;
         if (size == (std::numeric_limits<unsigned int>::max)()) return;
