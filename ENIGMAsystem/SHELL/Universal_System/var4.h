@@ -659,9 +659,12 @@ struct var : variant {
 
   variant& operator[] (int ind) {
     if (!ind) return *this;
+    if (ind < 0) return *this;
     return array1d[ind];
   }
   variant& operator() (int ind_2d,int ind_1d) {
+    if (ind_2d < 0 || ind_1d < 0)
+      return *this;
     if (ind_2d) return array2d[ind_2d][ind_1d];
     if (ind_1d) return array1d[ind_1d];
     return *this;
@@ -673,9 +676,12 @@ struct var : variant {
 
   const variant& operator[] (int ind) const {
     if (!ind) return *this;
+    if (ind < 0) return *this;
     return array1d[ind];
   }
   const variant& operator() (int ind_2d,int ind_1d) const {
+    if (ind_2d < 0 || ind_1d < 0)
+      return *this;	  
     if (ind_2d) return array2d[ind_2d][ind_1d];
     if (ind_1d) return array1d[ind_1d];
     return *this;
