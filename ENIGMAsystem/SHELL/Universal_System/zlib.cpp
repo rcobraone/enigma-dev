@@ -21,13 +21,14 @@
 
 #include <string>
 #include <memory>
-#include <zlib.h>
+#include <limits>
 
 namespace enigma {
 
 unsigned char* zlib_compress(unsigned char* inbuffer,int actualsize)
 {
-if (actualsize < 0)
+ if (actualsize < 0 ||
+     static_cast<unsigned long long>(actualsize) > std::numeric_limits<uLong>::max())
 return nullptr;
 
 if (!inbuffer && actualsize > 0)
@@ -43,7 +44,7 @@ return nullptr;
  std::unique_ptr<Bytef[]> outbytef(new Bytef[outsize]);
 
     int res=compress(outbytef.get(),&outsize,
-                     reinterpret_cast<const Bytef*>(inbuffer),
+                     input,
                      static_cast<uLong>(actualsize));
 
     if (res != Z_OK)
@@ -85,7 +86,7 @@ uLongf outused=static_cast<uLongf>(uncompresssize);
     switch(uncompress(output,&outused,input,
 
     static_cast<uLong>(insize))){
-	case Z_OK:return outused;
+	case Z_OK:return static_cast<int>(outused);
 	case Z_MEM_ERROR:
 		#if DEBUG_MODE
 			DEBUG_MESSAGE("Zerror: Memory out", MESSAGE_TYPE::M_ERROR);
