@@ -37,6 +37,8 @@
 #include <sstream>
 #include <math.h>
 #include <stdio.h>
+#include <limits>
+#include <cstddef>
 
 namespace {
  inline std::string pointer2string(void* ptr) {
@@ -93,14 +95,23 @@ void instance_deactivate_all(bool notme) {
 
 void instance_activate_all() {
 
-    std::map<int,enigma::object_basic*>::iterator iter = enigma::instance_deactivated_list.begin();
+    auto iter = enigma::instance_deactivated_list.begin();
     while (iter != enigma::instance_deactivated_list.end()) {
-        enigma::object_basic *inst = iter->second;
-        std::map<int,enigma::object_basic*>::iterator next = iter;
+        const int id = iter->first;
+        enigma::object_basic* const inst = iter->second;
+        std::map<int,enigma::object_basic*>::const_iterator next = iter;
         ++next;
+        const bool has_next =
+            next != enigma::instance_deactivated_list.end();
+        const int next_id = has_next ? next->first : 0;
+       
+
         enigma::instance_deactivated_list.erase(iter);
-        iter = next;
         inst->activate();
+
+        iter = has_next
+            ? enigma::instance_deactivated_list.lower_bound(next_id)
+            : enigma::instance_deactivated_list.end();       
     }
 }
 
@@ -127,18 +138,31 @@ void instance_deactivate_object(int obj) {
 }
 
 void instance_activate_object(int obj) {
-    std::map<int,enigma::object_basic*>::iterator iter = enigma::instance_deactivated_list.begin();
+    auto iter = enigma::instance_deactivated_list.begin();
     while (iter != enigma::instance_deactivated_list.end()) {
+		const int id = iter->first;
         enigma::object_basic* const inst = iter->second;
-        if (obj == all || (obj < 100000 ? (inst->object_index==obj || inst->can_cast(obj)) : inst->id == unsigned(obj))) {
-            std::map<int,enigma::object_basic*>::iterator next = iter;
+        
+            std::map<int,enigma::object_basic*>::const_iterator next = iter;
             ++next;
-            enigma::instance_deactivated_list.erase(iter);
-            iter = next;   
+            const bool has_next =
+                next != enigma::instance_deactivated_list.end();
+            const int next_id = has_next ? next->first : 0;
+
+
+        if (obj == all ||
+            (obj < 100000
+                 ? (inst->object_index == obj || inst->can_cast(obj))
+                 : inst->id == static_cast<unsigned>(obj))) {
+            enigma::instance_deactivated_list.erase(iter);             
             inst->activate();
+
+            iter = has_next
+                ? enigma::instance_deactivated_list.lower_bound(next_id)
+                : enigma::instance_deactivated_list.end();
         }
         else {
-            iter++;
+            ++iter;
         }
     }
 }
@@ -177,18 +201,25 @@ void instance_destroy()
   if (!a)
     return;
 
-  if (enigma::cleanups.find(a) == enigma::cleanups.end()) {
-    a->myevent_destroy();
-    if (enigma::cleanups.find(a) == enigma::cleanups.end())
-        a->unlink();
+  if (enigma::cleanups.find(a) != enigma::cleanups.end())
+    return;
+
+  a->myevent_destroy();
+
   if (enigma::cleanups.find(a) == enigma::cleanups.end())
+    a->unlink();
+
+  if (enigma::cleanups.find(a) == enigma::cleanups.end())
+  {
     DEBUG_MESSAGE(
         "instance_destroy(): instance was not scheduled for cleanup.",
         MESSAGE_TYPE::M_ERROR
     );
-    if (!enigma::instance_event_iterator ||
-    if (a != (enigma::instance_event_iterator
-                  ? enigma::instance_event_iterator->inst : NULL))
+  }
+
+  if (!enigma::instance_event_iterator ||
+      a != enigma::instance_event_iterator->inst)
+  {
     DEBUG_MESSAGE(
         "instance_destroy(): event iterator changed unexpectedly.",
         MESSAGE_TYPE::M_ERROR
@@ -203,6 +234,9 @@ bool instance_exists(int obj)
 
 enigma::instance_t instance_find(int obj, int num)
 {
+  if (num < 0)
+    return noone;
+	
   int nth = 0;
   for (enigma::iterator it = enigma::fetch_inst_iter_by_int(obj); it; ++it)
   {
@@ -231,13 +265,22 @@ int instance_number(int obj)
     case other:
       return (bool) enigma::fetch_inst_iter_by_int(obj);
     case all:
-      return enigma::instance_list.size();
+      {
+        const std::size_t count = enigma::instance_list.size();
+        const std::size_t max_count =
+            static_cast<std::size_t>(
+                std::numeric_limits<int>::max()
+            );
+        return count > max_count
+            ? std::numeric_limits<int>::max()
+            : static_cast<int>(count);
+      }
     default:
        if (obj < 0) return 0;
        if (static_cast<size_t>(obj) >= enigma::object_idmax)
         return 0;
   }
-  return enigma::objects[obj].count;
+  return instance_count_to_int(enigma::objects[obj].count);
 }
 
 }
