@@ -68,7 +68,7 @@ namespace enigma
                    ((mask_index >= 0 ? (sprite_get_bbox_right_relative(mask_index) + 1)*image_xscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_right_relative(sprite_index) + 1)*image_xscale - 1: 0)) + x + .5) :
                    ((mask_index >= 0 ? sprite_get_bbox_left_relative(mask_index)*image_xscale : (sprite_index >= 0 ? sprite_get_bbox_left_relative(sprite_index)*image_xscale : 0)) + x + .5);
 
-        const double arad = image_angle*(M_PI/180.0);
+        const double arad = image_angle*(std::acos(-1.0)/180.0);
         const int quad = bbox_quadrant(image_angle);
         double w, h;
         w = ((image_xscale >= 0)^(quad == 1 || quad == 2)) ?
