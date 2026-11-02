@@ -142,21 +142,26 @@ namespace enigma_user
   inline void action_change_object(int obj, bool perf) {instance_change(obj,perf);}
 
   void instance_change(int obj, bool perf) {
-      enigma::object_graphics* inst = (enigma::object_graphics*) enigma::instance_event_iterator->inst;
-
-    if (!inst)
-        return;
+    if (!enigma::instance_event_iterator ||
+        !enigma::instance_event_iterator->inst)
+      return;
+    enigma::object_graphics* inst =
+        static_cast<enigma::object_graphics*>(
+            enigma::instance_event_iterator->inst);
 
       enigma::instance_change_inst(obj, perf, inst);
   }
 
   void instance_copy(bool perf)
   {
-    enigma::object_graphics* inst = (enigma::object_graphics*) enigma::instance_event_iterator->inst;
-
-    if (!inst)
+    if (!enigma::instance_event_iterator ||
+        !enigma::instance_event_iterator->inst)
       return;
-
+      
+    enigma::object_graphics* inst =
+        static_cast<enigma::object_graphics*>(
+            enigma::instance_event_iterator->inst);
+      
     int idn = enigma::maxid++;
 
     enigma::object_basic* ob;
