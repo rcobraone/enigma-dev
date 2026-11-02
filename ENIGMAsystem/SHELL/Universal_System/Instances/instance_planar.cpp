@@ -29,6 +29,7 @@
 #include "instance_system.h"
 #include "instance.h"
 #include <cfloat>
+#include <cmath>
 
 namespace enigma_user
 {
@@ -47,7 +48,9 @@ enigma::instance_t instance_nearest(int x,int y,int obj,bool notme)
     if (notme && self && *it == self) continue;
     xl = ((enigma::object_planar*)*it)->x - x;
     yl = ((enigma::object_planar*)*it)->y - y;
-    const double dstclc = xl * xl + yl * yl;
+    const double dstclc = std::hypot(xl, yl);
+    if (!std::isfinite(dstclc)) continue;
+
     if (dstclc < dist_lowest) {
       dist_lowest = dstclc;
       retid = it->id;
@@ -73,7 +76,9 @@ enigma::instance_t instance_furthest(int x,int y,int obj,bool notme)
     if (notme && self && *it == self) continue;
     xl=((enigma::object_planar*)*it)->x - x;
     yl=((enigma::object_planar*)*it)->y - y;
-    dstclc = xl * xl + yl * yl;
+    dstclc = std::hypot(xl, yl);
+    if (!std::isfinite(dstclc)) continue;
+
     if (dstclc > dist_highest)
     {
       dist_highest = dstclc;
