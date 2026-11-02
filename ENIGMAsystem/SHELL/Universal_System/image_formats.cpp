@@ -50,7 +50,7 @@ Color image_get_pixel_color(const RawImage& in, unsigned x, unsigned y) {
     if (in.pxdata == nullptr || x >= in.w || y >= in.h)
       return c;
 
-  size_t index = 4 * (y * in.w + x);
+  const size_t index = (static_cast<size_t>(y) * in.w + x) * 4u;
   c.b = in.pxdata[index];
   c.g = in.pxdata[index + 1];
   c.r = in.pxdata[index + 2];
@@ -91,34 +91,31 @@ void image_swap_color(RawImage& in, Color oldColor, Color newColor) {
 }
 
 void image_remove_color(RawImage& in, Color oldColor) {
-  #ifdef DEBUG_MODE
-  if (in.pxdata == nullptr) {
-    in.pxdata = new unsigned char[in.w * in.h * 4];
-    std::fill(in.pxdata, in.pxdata + (in.w * in.h * 4), 255);
-    DEBUG_MESSAGE("Attempt to access a null pointer" , MESSAGE_TYPE::M_ERROR);
+  if (in.pxdata == nullptr || in.w == 0 || in.h == 0)
     return;
-  }
-  #endif
 
-  unsigned int ih, iw;
-  for (ih = 0; ih < in.h; ih++) {
-    int index = ih * in.w * 4;
-    
-    for (iw = 0; iw < in.w; iw++) {
-      if (
+  for (size_t ih = 0; ih < in.h; ++ih) {
+    for (size_t iw = 0; iw < in.w; ++iw) {
+      const size_t index = (ih * in.w + iw) * 4u;
            in.pxdata[index]     == oldColor.b
         && in.pxdata[index + 1] == oldColor.g
         && in.pxdata[index + 2] == oldColor.r
         ) {
           in.pxdata[index + 3] = 0;
       } else {
-        unsigned int nw = (iw <= 0 ? iw : iw - 1),
-                     nh = (ih <= 0 ? ih : ih - 1);
-        float neighbors = 0, counted = 0;
-        for (; nh <= ih + 1 && nh < in.h; ++nh) {
-          for (; nw <= iw + 1 && nw < in.w; ++nw) {
+        const size_t x_start = (iw == 0) ? 0 : iw - 1;
+        const size_t y_start = (ih == 0) ? 0 : ih - 1;
+        const size_t x_end = std::min(iw + 1, static_cast<size_t>(in.w - 1));
+        const size_t y_end = std::min(ih + 1, static_cast<size_t>(in.h - 1));
+
+
+        unsigned neighbors = 0;
+        unsigned counted = 0;
+
+        for (size_t nh = y_start; nh <= y_end; ++nh) {
+          for (size_t nw = x_start; nw <= x_end; ++nw) {
             ++counted;
-            int ni = (nh * in.w + nw) * 4;
+            const size_t ni = (nh * in.w + nw) * 4u;
             if (
                  in.pxdata[ni]     != oldColor.b
               || in.pxdata[ni + 1] != oldColor.g
@@ -127,15 +124,22 @@ void image_remove_color(RawImage& in, Color oldColor) {
               ++neighbors;
           }
         }
-        in.pxdata[index + 3] = static_cast<unsigned char>((neighbors/counted) * 255.0f);
+
+        if (counted != 0) {
+          in.pxdata[index + 3] = static_cast<unsigned char>(
+              (neighbors * 255u) / counted);
+        }
       }
 
-      index += 4;
+
     }
   }
 }
 
 void image_remove_color(RawImage& in) {
+  if (in.pxdata == nullptr || in.w == 0 || in.h == 0)
+    return;
+	
   Color bottom_left = image_get_pixel_color(in, 0, in.h - 1);
   image_remove_color(in, bottom_left);
 }
@@ -143,32 +147,43 @@ void image_remove_color(RawImage& in) {
 std::vector<RawImage> image_split(const RawImage& in, unsigned imgcount) {
   if (imgcount == 0)
     return {};
+
+  if (in.w == 0 || in.h == 0 || in.pxdata == nullptr)
+    return {};
+
+  if (imgcount > in.w)
+    return {};
     
   std::vector<RawImage> imgs(imgcount);
-  unsigned splitWidth = in.w / imgcount;
+  const unsigned base_width = in.w / imgcount;
+  const unsigned remainder = in.w % imgcount;
+  size_t x_offset = 0;
   
   for (unsigned i = 0; i < imgcount; ++i) {
+    const unsigned splitWidth =
+        base_width + (i < remainder ? 1u : 0u);
     
-    imgs[i].pxdata = new unsigned char[splitWidth * in.h * 4]();
+    const size_t row_size = static_cast<size_t>(splitWidth) * 4u;
+    const size_t allocation_size =
+        row_size * static_cast<size_t>(in.h);
+
+    imgs[i].pxdata = new unsigned char[allocation_size];
     imgs[i].w = splitWidth;
     imgs[i].h = in.h;
     
-    unsigned ih,iw;
-    unsigned xcelloffset = i * splitWidth * 4;
-    
-    for (ih = 0; ih < in.h; ih++) {
-      unsigned tmp = ih * in.w * 4 + xcelloffset;
-      unsigned tmpcell = ih * splitWidth * 4;
-      
-      for (iw = 0; iw < splitWidth; iw++) {
-        imgs[i].pxdata[tmpcell]     = in.pxdata[tmp];
-        imgs[i].pxdata[tmpcell + 1] = in.pxdata[tmp + 1];
-        imgs[i].pxdata[tmpcell + 2] = in.pxdata[tmp + 2];
-        imgs[i].pxdata[tmpcell + 3] = in.pxdata[tmp + 3];
-        tmp += 4;
-        tmpcell += 4;
-      }
+    for (size_t row = 0; row < in.h; ++row) {
+      const size_t src_offset =
+          (row * static_cast<size_t>(in.w) + x_offset) * 4u;
+      const size_t dst_offset = row * row_size;
+
+      std::memcpy(
+          imgs[i].pxdata + dst_offset,
+          in.pxdata + src_offset,
+          row_size
+      );
     }
+    
+    x_offset += splitWidth;
   }
   
   return imgs;
@@ -178,30 +193,37 @@ RawImage image_pad(const RawImage& in, unsigned newWidth, unsigned newHeight) {
   RawImage padded;
   if (newWidth < in.w || newHeight < in.h)
     return padded;
+
+  const size_t width = static_cast<size_t>(newWidth);
+  const size_t height = static_cast<size_t>(newHeight);
+
+  if (height != 0 &&
+      width > std::numeric_limits<size_t>::max() / height / 4u)
+    return padded;
+
+  if (in.pxdata == nullptr && in.w != 0 && in.h != 0)
+    return padded;
+
+  const size_t row_size = width * 4u;
+  const size_t allocation_size = row_size * height;
   
   padded.w = newWidth;
   padded.h = newHeight;
   
-  padded.pxdata = new unsigned char[4 * newWidth * newHeight + 1];
-  
-  unsigned char* imgpxptr = padded.pxdata;
-  const unsigned char* inpxdata = in.pxdata;
-  unsigned rowindex, colindex;
-  for (rowindex = 0; rowindex < in.h; rowindex++) {
-    for (colindex = 0; colindex < in.w; colindex++) {
-      *imgpxptr++ = *inpxdata++;
-      *imgpxptr++ = *inpxdata++;
-      *imgpxptr++ = *inpxdata++;
-      *imgpxptr++ = *inpxdata++;
+  padded.pxdata = new unsigned char[allocation_size]();
+
+  if (in.pxdata != nullptr) {
+    const size_t source_row_size =
+        static_cast<size_t>(in.w) * 4u;
+
+    for (size_t row = 0; row < in.h; ++row) {
+      std::memcpy(
+          padded.pxdata + row * row_size,
+          in.pxdata + row * source_row_size,
+          source_row_size
+      );
     }
-    
-    std::memset(imgpxptr, 0, (newWidth - colindex) << 2);
-    imgpxptr += (newWidth - colindex) << 2;
   }
-  
-  std::memset(imgpxptr, 0,
-              static_cast<size_t>(newHeight - in.h) *
-              static_cast<size_t>(newWidth) * 4u);
   
   return padded;
 }
@@ -209,24 +231,33 @@ RawImage image_pad(const RawImage& in, unsigned newWidth, unsigned newHeight) {
 RawImage image_crop(const RawImage& in, unsigned newWidth, unsigned newHeight) {
   if (newWidth > in.w || newHeight > in.h)
     return RawImage();
+
+  if (in.pxdata == nullptr && newWidth != 0 && newHeight != 0)
+    return RawImage();
+
+  if (newWidth != 0 &&
+      static_cast<size_t>(newHeight) >
+          std::numeric_limits<size_t>::max() /
+          static_cast<size_t>(newWidth) / 4u)
+    return RawImage();
   
   RawImage img;
   img.w = newWidth;
   img.h = newHeight;
-  img.pxdata = new unsigned char[newWidth * newHeight * 4];
-  
-  unsigned stride = 4;
-  for (unsigned i = 0; i < newHeight; i++) {
-    unsigned tmp = i;
-    unsigned bmp = i;
-    tmp *= stride * in.w;
-    bmp *= stride * newWidth;
-    for (unsigned ii = 0; ii < newWidth*stride; ii += stride) {
-      img.pxdata[bmp + ii + 2] = in.pxdata[tmp + ii + 0];
-      img.pxdata[bmp + ii + 1] = in.pxdata[tmp + ii + 1];
-      img.pxdata[bmp + ii + 0] = in.pxdata[tmp + ii + 2];
-      img.pxdata[bmp + ii + 3] = in.pxdata[tmp + ii + 3];
-    }
+  const size_t row_size = static_cast<size_t>(newWidth) * 4u;
+  const size_t image_size = row_size * newHeight;
+
+  img.pxdata = new unsigned char[image_size];
+
+  for (size_t y = 0; y < newHeight; ++y) {
+    const size_t src_offset = y * static_cast<size_t>(in.w) * 4u;
+    const size_t dst_offset = y * row_size;
+
+    std::memcpy(
+        img.pxdata + dst_offset,
+        in.pxdata + src_offset,
+        row_size
+    );
   }
   
   return img;
@@ -279,14 +310,30 @@ void image_add_saver(const std::filesystem::path& extension, ImageSaveFunction f
 }
 
 void image_flip(RawImage& in) {
-  //flipped upside down
-  unsigned bytes = 4;
-  unsigned sz = in.w * in.h * bytes;
-  unsigned char* rgbdata = new unsigned char[sz];
-  for (unsigned int i = 0; i < in.h; i++) { // Doesn't matter the order now
-    memcpy(&rgbdata[i*in.w*bytes*sizeof(unsigned char)],           // address of destination
-           &in.pxdata[(in.h-i-1)*in.w*bytes*sizeof(unsigned char)],   // address of source
-           in.w*bytes*sizeof(unsigned char) );                     // number of bytes to copy
+  if (in.pxdata == nullptr || in.w == 0 || in.h == 0)
+    return;
+
+  constexpr size_t bytes_per_pixel = 4u;
+  const size_t row_size =
+      static_cast<size_t>(in.w) * bytes_per_pixel;
+
+  if (static_cast<size_t>(in.h) >
+      std::numeric_limits<size_t>::max() / row_size)
+    return;
+
+  const size_t image_size = row_size * in.h;
+  unsigned char* rgbdata = new unsigned char[image_size];
+
+  for (size_t i = 0; i < in.h; ++i) {
+    const size_t destination_offset = i * row_size;
+    const size_t source_offset =
+        (static_cast<size_t>(in.h) - i - 1u) * row_size;
+
+    std::memcpy(
+        rgbdata + destination_offset,
+        in.pxdata + source_offset,
+        row_size
+    );
   }
   
   delete[] in.pxdata;
@@ -443,7 +490,17 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
 
   const BMPInfoHeader &bmp_info =
       *(BMPInfoHeader*) (image_data.data() + sizeof(BMPFileHeader));
-
+      
+  // BMP width and height are signed 32-bit values.
+  // Negative height indicates top-down bitmap orientation.
+  if (bmp_info.width == 0 ||
+      bmp_info.height == 0 ||
+      bmp_info.width > static_cast<uint32_t>(INT32_MAX) ||
+      bmp_info.height > static_cast<uint32_t>(INT32_MAX)) {
+    fprintf(stderr, "Invalid BMP dimensions\n");
+    return imgs;
+  }
+     
   if(bmp_info.bitsPerPixel != 32 && bmp_info.bitsPerPixel != 24) {
     fprintf(stderr, "No support for %dbpp bitmaps\n", bmp_info.bitsPerPixel);
     return imgs;
@@ -498,10 +555,9 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
   img.pxdata = bitmap = new unsigned char[output_size](); // Initialize to 0.
 
   // Calculate the number of nulls that follows each line.
-  const int overlap = bmp_info.width * (bmp_info.bitsPerPixel / 8) % 4;
-  const int pad = overlap ? 4 - overlap : 0;
-
-  printf("Bitmap pad: %d\n", pad);
+  const size_t pad = static_cast<size_t>(
+      padded_row_bytes - row_bytes
+  );
   const char *bmp_it = image_data.data() + bmp_file.dataStart;
 
   for (unsigned ih = 0; ih < bmp_info.height; ih++) {
