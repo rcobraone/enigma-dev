@@ -213,13 +213,32 @@ bool object_is_ancestor(int objid, int acid)
 {
   errcheck(objid,"Object doesn't exist");
   errcheck(acid,"Ancestor id doesn't exist");
+  
   size_t steps = 0;
+  
   while (objid >= 0 &&
-         size_t(objid) < enigma::object_idmax &&
-         steps++ < enigma::object_idmax)
+         static_cast<size_t>(objid) < enigma::object_idmax &&
+         enigma::objectdata[objid] != nullptr &&
+         steps < enigma::object_idmax)
+  {
+    if (enigma::objectdata[objid] == nullptr)
+      return false;
+
+   {
     if (objid == acid)
       return true;
-    else objid = static_cast<int>(enigma::objectdata[objid]->parent);
+        +
+
+    const int parent = enigma::objectdata[objid]->parent;
+
+    if (parent < 0 ||
+        static_cast<size_t>(parent) >= enigma::object_idmax)
+      return false;
+
+    objid = parent;
+    ++steps;
+  }
+
   return false;
 }
 
