@@ -129,6 +129,7 @@ template <class T> struct lua_table {
   }
 
   const T& operator*() const {
+	  static const T sentinel;
     if (dense.empty()) {
       const auto it = sparse.find(0);
       if (it != sparse.end())
@@ -149,6 +150,8 @@ template <class T> struct lua_table {
   }
 
   lua_table<T>& operator= (const lua_table<T>& x) {
+    if (this == &x)
+      return *this;	  
     pick_up(x);
     return *this;
   }
