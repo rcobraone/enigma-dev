@@ -46,7 +46,7 @@ namespace enigma
   variant object_graphics::myevent_drawresize()   { return 0; }
 
   void depthv::function(const variant &oldval) {
-    if (!myiter) { return; }
+    if (!myiter || !myiter->inst) { return; }
 
     rval.d = floor(rval.d);
     if (fequal(oldval.rval.d, rval.d)) return;
@@ -63,6 +63,11 @@ namespace enigma
     myiter = drawing_depths[rval.d = floor(d)].draw_events->add_inst(who);
   }
   void depthv::remove() {
+    if (!myiter)
+      return;
+    if (!myiter->inst)
+      return;
+
     std::map<int,std::pair<double,double> >::iterator it = id_to_currentnextdepth.find(myiter->inst->id);
     if (it == id_to_currentnextdepth.end()) { // Local value is valid, use it.
       drawing_depths[rval.d].draw_events->unlink(myiter);
@@ -70,7 +75,7 @@ namespace enigma
     else { // Local value is invalid, use the one in the map.
       drawing_depths[(*it).second.first].draw_events->unlink(myiter);
     }
-    myiter = NULL;
+    myiter = nullptr;
   }
 
   depthv::depthv() : multifunction_variant<depthv>(0), myiter(0) {}
