@@ -17,7 +17,7 @@
 
 #ifndef ENIGMA_IMAGEFORMATS_EXTS_H
 #define ENIGMA_IMAGEFORMATS_EXTS_H
-
+#include "image_formats.h"
 #include <functional>
 #include <string>
 #include <filesystem>
