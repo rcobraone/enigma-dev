@@ -22,7 +22,6 @@
 
 #include <limits>
 #include <algorithm> // min/max
-#include <stdlib.h>
 #include <cmath>
 
 // Note: This hack is justifiable in that it was put here to prevent
@@ -31,14 +30,12 @@
 #include "mathnc.h"
 #undef INCLUDED_FROM_SHELLMAIN
 
-#define M_PI    3.14159265358979323846
-
 //overloading
 
 namespace enigma_user
 {
   ma_scalar triangle_area(ma_scalar x1, ma_scalar y1, ma_scalar x2, ma_scalar y2, ma_scalar x3, ma_scalar y3){
-    return fabs(((x2 - x1)*(y3 - y1) - (x3 - x1)*(y2 - y1))/2.0);
+    return std::fabs(((x2 - x1)*(y3 - y1) - (x3 - x1)*(y2 - y1))/2.0);
   }
 
   bool point_in_circle(ma_scalar px, ma_scalar py, ma_scalar x1, ma_scalar y1, ma_scalar rad) {
@@ -83,19 +80,19 @@ namespace enigma_user
     ma_scalar rw2 = (sx2-sx1)/2.0;
     ma_scalar rh2 = (sy2-sy1)/2.0;
 
-    ma_scalar cDx = fabs(x - (sx1+rw2));
-    ma_scalar cDy = fabs(y - (sy1+rh2));
+    ma_scalar cDx = std::fabs(x - (sx1+rw2));
+    ma_scalar cDy = std::fabs(y - (sy1+rh2));
 
-    rw2 = fabs(rw2);
-    rh2 = fabs(rh2);
+    rw2 = std::fabs(rw2);
+    rh2 = std::fabs(rh2);
 
     //Check no intersection
     if (cDx > (rw2 + rad)) return 0;
     if (cDy > (rh2 + rad)) return 0;
 
     //Check if totally inside
-    ma_scalar cpx = fmax(fabs(x-sx1),fabs(x-sx2));
-    ma_scalar cpy = fmax(fabs(y-sy1),fabs(y-sy2));
+    ma_scalar cpx = std::fmax(std::fabs(x-sx1),std::fabs(x-sx2));
+    ma_scalar cpy = std::fmax(std::fabs(y-sy1),std::fabs(y-sy2));
     if (cpx*cpx + cpy*cpy <= rad*rad) return 1;
 
     //Check partial overlap
@@ -164,7 +161,7 @@ namespace enigma_user
   ma_scalar dot_product(ma_scalar x1,ma_scalar y1,ma_scalar x2,ma_scalar y2) { return (x1 * x2 + y1 * y2); }
   ma_scalar dot_product_3d(ma_scalar x1,ma_scalar y1,ma_scalar z1,ma_scalar x2,ma_scalar y2, ma_scalar z2) { return (x1 * x2 + y1 * y2 + z1 * z2); }
   ma_scalar dot_product_normalised(ma_scalar x1,ma_scalar y1,ma_scalar x2,ma_scalar y2) {
-  	ma_scalar length = sqrt(x1*x1+y1*y1);
+  	ma_scalar length = std::sqrt(x1*x1+y1*y1);
   	
     if (length == 0)
       return 0;
@@ -172,7 +169,7 @@ namespace enigma_user
     x1 = x1/length;
     y1 = y1/length;
 
-	length = sqrt(x2*x2+y2*y2);
+	length = std::sqrt(x2*x2+y2*y2);
 	
 	if (length == 0)
       return 0;
@@ -182,7 +179,7 @@ namespace enigma_user
     return (x1 * x2 + y1 * y2);
   }
   ma_scalar dot_product_normalised_3d(ma_scalar x1,ma_scalar y1,ma_scalar z1,ma_scalar x2,ma_scalar y2, ma_scalar z2) {
-	ma_scalar length = sqrt(x1*x1+y1*y1+z1*z1);
+	ma_scalar length = std::sqrt(x1*x1+y1*y1+z1*z1);
 
     if (length == 0)
       return 0;
@@ -191,7 +188,7 @@ namespace enigma_user
     y1 = y1/length;
     z1 = z1/length;
 
-	length = sqrt(x2*x2+y2*y2+z2*z2);
+	length = std::sqrt(x2*x2+y2*y2+z2*z2);
 	
 	if (length == 0)
       return 0;
