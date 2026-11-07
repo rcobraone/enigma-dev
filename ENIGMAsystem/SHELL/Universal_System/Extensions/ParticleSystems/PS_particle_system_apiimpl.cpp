@@ -105,8 +105,9 @@ namespace enigma_user {
       else {
         // If the particle system does not have automatic drawing enabled, it is not in the depth system,
         // and the value should just be updated.
-        p_s->depth = new_depth;
+       
       }
+       p_s->depth = new_depth;
     }
   }
   void part_system_position(int id, double x, double y)
