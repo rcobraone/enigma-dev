@@ -143,7 +143,7 @@ void enigma::IniFileIndex::load(std::istream& input, char commentChar)
 				comment.str("");
 
 				//Now deal with comments.
-				if (rhs[0]==commentChar) {
+				if (!rhs.empty() && rhs[0]==commentChar) {
 					sections[secName].props[key].postfix = trim(rhs);
 				}
 			}
@@ -295,7 +295,7 @@ bool enigma::IniFileIndex::saveToFile(const std::string& fname) const
 	}
 	
 	out <<this->toString();
-	return true;
+	return out.good();
 }
 
 std::string enigma::IniFileIndex::toString() const
