@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <iterator>
 #include <map>
+#include <limits>
 #include <deque>
 #include <vector>
 
@@ -64,36 +65,65 @@ class grid
     t *grid_array;
 
     public:
-    grid() {}
+    grid() : xgrid(0), ygrid(0), grid_array(nullptr) {}
     grid(const unsigned int w, const unsigned int h) {
-      ygrid = h; xgrid = w; grid_array = new t[w*h];
+      ygrid = h;
+      xgrid = w;
+      if (h != 0 && w > std::numeric_limits<size_t>::max() / h)
+        throw std::bad_array_new_length();
+      grid_array = new t[static_cast<size_t>(w) * h];
     }
-    ~grid() {}
+    ~grid() : xgrid(0), ygrid(0), grid_array(nullptr) {}
 
     void destroy()
     {
         delete[] grid_array;
+        grid_array = nullptr;
+        xgrid = 0;
+        ygrid = 0;
     }
-    void clear(const t val)
+    void clear()
     {
-        for (unsigned i = 0; i < ygrid; i++)
-            for (unsigned ii = 0; ii < xgrid; ii++)
-                grid_array[i * xgrid + ii] = val;
+        if (ygrid != 0 &&
+            xgrid > std::numeric_limits<size_t>::max() / ygrid)
+            throw std::bad_array_new_length();
+
+        const size_t count = static_cast<size_t>(xgrid) * ygrid;
+        t *new_array = new t[count];
+
+        delete[] grid_array;
+        grid_array = new_array;
     }
     void resize(unsigned w, unsigned h)
     {
-        grid<variant> temp(w, h);
+        t *new_grid_array = new t[w * h];
         const unsigned int wm = minv(xgrid, w), hm = minv(ygrid, h);
         for (unsigned i = 0; i < hm; i++)
             for (unsigned ii = 0; ii < wm; ii++)
-                temp.grid_array[i * w + ii] = grid_array[i * xgrid + ii];
+                new_grid_array[i * w + ii] = grid_array[i * xgrid + ii];
+
         delete[] grid_array;
-        (*this) = temp;
+
+        grid_array = new_grid_array;
+        xgrid = w;
+        ygrid = h;
     }
     void copy(const grid& copy_id)
     {
+        if (this == &copy_id)
+            return;
+
         delete[] grid_array;
-        grid_array = new t[copy_id.ygrid*copy_id.xgrid];
+        if (copy_id.ygrid != 0 &&
+            copy_id.xgrid > std::numeric_limits<size_t>::max() / copy_id.ygrid)
+            throw std::bad_array_new_length();
+
+        const size_t count =
+            static_cast<size_t>(copy_id.ygrid) * copy_id.xgrid;
+        t *new_array = new t[count];
+
+        delete[] grid_array;
+        grid_array = new_array;
         xgrid = copy_id.xgrid;
         ygrid = copy_id.ygrid;
         for (unsigned i = 0; i < ygrid; i++)
@@ -128,33 +158,54 @@ class grid
        const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
        if (xd > 0 && yd > 0)
        {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
+       const unsigned int tx1 = minv(x1, x2);
+       const unsigned int ty1 = minv(y1, y2);
+       const unsigned int tx2 = maxv(x1, x2);
+       const unsigned int ty2 = maxv(y1, y2);
+
+       if (tx1 >= xgrid || ty1 >= ygrid)
+           return;
+
+       const unsigned int px2 = tx2 >= xgrid - 1 ? xgrid : tx2 + 1;
+       const unsigned int py2 = ty2 >= ygrid - 1 ? ygrid : ty2 + 1;
+
+       for (unsigned int i = ty1; i < py2; i++)
+           for (unsigned int ii = tx1; ii < px2; ii++)
                    grid_array[i * xgrid + ii] = val;
-       }
     }
     void add_region(const unsigned int x1, const unsigned int y1, unsigned int x2, const unsigned int y2, const t val)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       if (xd > 0 && yd > 0)
-       {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
+       const unsigned int tx1 = minv(x1, x2);
+       const unsigned int ty1 = minv(y1, y2);
+       const unsigned int tx2 = maxv(x1, x2);
+       const unsigned int ty2 = maxv(y1, y2);
+
+       if (tx1 >= xgrid || ty1 >= ygrid)
+           return;
+
+       const unsigned int px2 = tx2 >= xgrid - 1 ? xgrid : tx2 + 1;
+       const unsigned int py2 = ty2 >= ygrid - 1 ? ygrid : ty2 + 1;
+
+       for (unsigned int i = ty1; i < py2; i++)
+           for (unsigned int ii = tx1; ii < px2; ii++)
                    grid_array[i * xgrid + ii] += val;
-       }
     }
     void multiply_region(const unsigned int x1, const unsigned int y1, unsigned int x2, const unsigned int y2, const double val)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       if (xd > 0 && yd > 0)
-       {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
+       const unsigned int tx1 = minv(x1, x2);
+       const unsigned int ty1 = minv(y1, y2);
+       const unsigned int tx2 = maxv(x1, x2);
+       const unsigned int ty2 = maxv(y1, y2);
+
+       if (tx1 >= xgrid || ty1 >= ygrid)
+           return;
+
+       const unsigned int px2 = tx2 >= xgrid - 1 ? xgrid : tx2 + 1;
+       const unsigned int py2 = ty2 >= ygrid - 1 ? ygrid : ty2 + 1;
+
+       for (unsigned int i = ty1; i < py2; i++)
+           for (unsigned int ii = tx1; ii < px2; ii++)
                    grid_array[i * xgrid + ii] *= val;
-       }
     }
     void insert_disk(const double x, const double y, const double r, const t val)
     {
@@ -244,13 +295,17 @@ class grid
     }
     t find_region_sum(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       if (xd > 0 && yd > 0)
+       const unsigned int tx1 = minv(x1, x2);
+       const unsigned int ty1 = minv(y1, y2);
+       const unsigned int tx2 = maxv(x1, x2);
+       const unsigned int ty2 = maxv(y1, y2);
+       if (tx1 < xgrid && ty1 < ygrid)
        {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
+           const unsigned int px2 = tx2 >= xgrid - 1 ? xgrid : tx2 + 1;
+           const unsigned int py2 = ty2 >= ygrid - 1 ? ygrid : ty2 + 1;       
            variant sum = 0;
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
+           for (unsigned int i = ty1; i < py2; i++)
+               for (unsigned int ii = tx1; ii < px2; ii++)
                    sum += grid_array[i * xgrid + ii];
            return sum;
        }
@@ -332,16 +387,20 @@ class grid
         if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
         {
             const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            t max_check = grid_array[py1 * xgrid + px1];
+            bool found = false;
+            t max_check = t();
             for (int i = py1; i < py2; i++)
                 for (int ii = px1; ii < px2; ii++)
                     if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
                     {
                         const double val_check = grid_array[i * xgrid + ii];
-                        if (val_check > max_check)
-                            max_check = val_check;
+                         if (!found || val_check > max_check)
+                         {
+                             max_check = val_check;
+                             found = true;
+                         }
                     }
-            return max_check;
+            return found ? max_check : t();
         }
         return t();
     }
@@ -352,16 +411,20 @@ class grid
         if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
         {
             const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            t min_check = grid_array[lrint(y) * xgrid + lrint(x)];
+             bool found = false;
+             t min_check = t();
             for (int i = py1; i < py2; i++)
                 for (int ii = px1; ii < px2; ii++)
                     if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
                     {
                         const double val_check = grid_array[i * xgrid + ii];
-                        if (val_check < min_check)
+                        if (!found || val_check < min_check)
+                        {
                             min_check = val_check;
+                            found = true;
+                        }
                     }
-            return min_check;
+            return found ? min_check : t();
         }
         return t();
     }
@@ -381,6 +444,9 @@ class grid
                         sum += grid_array[i * xgrid + ii];
                         ++region_size;
                     }
+           if (region_size == 0)
+               return t();
+
            return sum/region_size;
         }
         return t();
@@ -450,7 +516,7 @@ class grid
                 for (int ii = px1; ii < px2; ii++)
                     if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
                         if (tequal(grid_array[i * xgrid + ii], val))
-                            return i;
+                            return ii;
         }
         return 0;
     }
@@ -465,13 +531,17 @@ class grid
                 for (int ii = px1; ii < px2; ii++)
                     if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
                         if (tequal(grid_array[i * xgrid + ii], val))
-                            return ii;
+                            return i;
         }
         return 0;
     }
     void shuffle()
     {
-        mt_random_shuffle(grid_array, grid_array + (xgrid*ygrid - 1));
+        if (xgrid == 0 || ygrid == 0)
+            return;
+
+        const size_t count = static_cast<size_t>(xgrid) * ygrid;
+        mt_random_shuffle(grid_array, grid_array + count);
     }
 };
 
@@ -494,8 +564,12 @@ unsigned int ds_grid_create(const unsigned int w, const unsigned int h)
 void ds_grid_destroy(const unsigned int id)
 {
   //Destroys the grid
-  ds_grids[id].destroy();
-  ds_grids.erase(ds_grids.find(id));
+  map<unsigned int, grid<variant> >::iterator it = ds_grids.find(id);
+  if (it != ds_grids.end())
+  {
+    it->second.destroy();
+    ds_grids.erase(it);
+  }
 }
 
 void ds_grid_clear(const unsigned int id, const variant val)
@@ -677,13 +751,13 @@ bool ds_grid_value_disk_exists(const unsigned int id, const double x, const doub
   return (ds_grids[id].value_disk_exists(x, y, r, val));
 }
 
-bool ds_grid_value_disk_x(const unsigned int id, const double x, const double y, const double r, const variant val)
+int ds_grid_value_disk_x(const unsigned int id, const double x, const double y, const double r, const variant val)
 {
   //Returns the x-coordinate of the cell in which the value appears in the disk
   return (ds_grids[id].value_disk_x(x, y, r, val));
 }
 
-bool ds_grid_value_disk_y(const unsigned int id, const double x, const double y, const double r, const variant val)
+int ds_grid_value_disk_y(const unsigned int id, const double x, const double y, const double r, const variant val)
 {
   //Returns the y-coordinate of the cell in which the value appears in the disk
   return (ds_grids[id].value_disk_y(x, y, r, val));
@@ -704,9 +778,10 @@ bool ds_grid_exists(const unsigned int id)
 unsigned int ds_grid_duplicate(const unsigned int source)
 {
   //creates and returns a new grid containing a copy of the source grid
-  ds_grids.insert(pair<unsigned int, grid<variant> >(ds_grids_maxid++, grid<variant>(0, 0)));
-  ds_grids[ds_grids_maxid-1].copy(ds_grids[source]);
-  return ds_grids_maxid-1;
+  const unsigned int id = ds_grids_maxid++;
+  ds_grids.insert(pair<unsigned int, grid<variant> >(id, grid<variant>(0, 0)));
+  ds_grids[id].copy(ds_grids[source]);
+  return id;
 }
 
 std::string ds_grid_write(const unsigned int id)
@@ -716,7 +791,7 @@ std::string ds_grid_write(const unsigned int id)
   ss.width(4);
   ss.fill('0');
 
-  grid<variant> dsGrid = ds_grids[id];
+  const grid<variant>& dsGrid = ds_grids[id];
 
   // Write size
   ss << std::hex << dsGrid.width();
@@ -762,43 +837,69 @@ std::string ds_grid_write(const unsigned int id)
 void ds_grid_read(const unsigned int id, std::string value)
 {
   std::stringstream ss;
-  int i = 8;
-  int width, height;
+  size_t i = 8;
+  unsigned long width_value;
+  unsigned long height_value;
 
   // Read count
-  ss << std::hex << value.substr(0, 4);
-  ss >> width;
-  ss.clear();
-  ss << std::hex << value.substr(4, 4);
-  ss >> height;
-  ss.clear();
+  if (!ds_read_hex(value, 0, 4, width_value))
+    return;
+  if (!ds_read_hex(value, 4, 4, height_value))
+    return;
 
+  const unsigned int width = static_cast<unsigned int>(width_value);
+  const unsigned int height = static_cast<unsigned int>(height_value);
+  
+  if (!ds_read_has_bytes(value, 0, 8))
+    return;
+
+  if (height != 0 &&
+      width > std::numeric_limits<size_t>::max() / height)
+    return;
+
+  const size_t cell_count = static_cast<size_t>(width) * height;
+  if (cell_count > (value.size() - 8) / 10)
+    return;
+  
   for (int y = 0; y < height; ++y)
   {
     for (int x = 0; x < width; ++x)
+      if (!ds_read_has_bytes(value, i, 10))
+        return;    
+    
     {
       int xx, yy, type;
 
       // Read x/y
-      ss << std::hex << value.substr(i, 4);
-      ss >> xx;
-      ss.clear();
+      unsigned long xx_value;
+      unsigned long yy_value;
+
+      if (!ds_read_hex(value, i, 4, xx_value))
+        return;
+      
       i += 4;
-      ss << std::hex << value.substr(i, 4);
-      ss >> yy;
-      ss.clear();
+      
+      if (!ds_read_hex(value, i, 4, yy_value))
+        return;
       i += 4;
+      
+      xx = static_cast<int>(xx_value);
+      yy = static_cast<int>(yy_value);
 
       // Read type
-      ss << std::hex << value.substr(i, 2);
-      ss >> type;
-      ss.clear();
+      unsigned long type_value;
+      if (!ds_read_hex(value, i, 2, type_value))
+        return;
+
+      type = static_cast<int>(type_value);
       i += 2;
 
       if (type == 0)
       {
         variant vari;
         vari.type = ty_real;
+        if (!ds_read_has_bytes(value, i, 16))
+          return;
 
         string b;
         ss << std::hex << value.substr(i, 16);
@@ -815,13 +916,18 @@ void ds_grid_read(const unsigned int id, std::string value)
       {
         variant vari;
         vari.type = ty_string;
-        int len;
+         unsigned long len_value;
 
         // Read length
-        ss << std::hex << value.substr(i, 4);
-        ss >> len;
-        ss.clear();
+        if (!ds_read_hex(value, i, 4, len_value))
+          return;
+        
         i += 4;
+        
+        if (len_value > value.size() - i)
+          return;
+
+        const size_t len = static_cast<size_t>(len_value);        
 
         vari.sval() = value.substr(i, len);
         i += len;
@@ -852,7 +958,9 @@ unsigned int ds_map_create()
 void ds_map_destroy(const unsigned int id)
 {
   //Destroys the map
-  ds_maps.erase(ds_maps.find(id));
+  map<unsigned int, multimap<variant, variant> >::iterator it = ds_maps.find(id);
+  if (it != ds_maps.end())
+    ds_maps.erase(it);
 }
 
 void ds_map_clear(const unsigned int id)
@@ -939,22 +1047,31 @@ void ds_map_delete(const unsigned int id, const variant first, const variant las
 bool ds_map_exists(const unsigned int id, const variant key)
 {
   //returns whether the key exists in the map
-  return (ds_maps[id].find(key) != ds_maps[id].end());
+  map<unsigned int, multimap<variant, variant> >::const_iterator map_it = ds_maps.find(id);
+  return map_it != ds_maps.end() && map_it->second.find(key) != map_it->second.end();
 }
 
 variant ds_map_find_value(const unsigned int id, const variant key)
 {
   //Returns the value corresponding to the key in the map
-  multimap<variant, variant>::iterator it = ds_maps[id].find(key);
-  return ((it == ds_maps[id].end()) ? variant() : (*it).second);
+  map<unsigned int, multimap<variant, variant> >::const_iterator map_it = ds_maps.find(id);
+  if (map_it == ds_maps.end())
+    return variant();
+
+  multimap<variant, variant>::const_iterator it = map_it->second.find(key);
+  return (it == map_it->second.end()) ? variant() : it->second;
 }
 
 variant ds_map_find_previous(const unsigned int id, const variant key)
 {
   //Returns the largest key in the map smaller than the indicated key
+  map<unsigned int, multimap<variant, variant> >::const_iterator map_it = ds_maps.find(id);
+  if (map_it == ds_maps.end())
+    return variant();
+
   multimap<variant, variant>::reverse_iterator rit;
   variant key_check;
-  for (rit = ds_maps[id].rbegin(); rit != ds_maps[id].rend(); rit++)
+  for (rit = map_it->second.rbegin(); rit != map_it->second.rend(); rit++)
   {
     if ((key_check = (*rit).first) < key)
     {
@@ -967,9 +1084,12 @@ variant ds_map_find_previous(const unsigned int id, const variant key)
 variant ds_map_find_next(const unsigned int id, const variant key)
 {
   //Returns the smallest key in the map larger than the indicated key
+   map<unsigned int, multimap<variant, variant> >::const_iterator map_it = ds_maps.find(id);
+  if (map_it == ds_maps.end())
+    return variant()
   multimap<variant, variant>::iterator it;
   variant key_check;
-  for (it = ds_maps[id].begin(); it != ds_maps[id].end(); it++)
+  for (rit = map_it->second.rbegin(); rit != map_it->second.rend(); rit++)
   {
     if ((key_check = (*it).first) > key)
     {
@@ -982,15 +1102,21 @@ variant ds_map_find_next(const unsigned int id, const variant key)
 variant ds_map_find_first(const unsigned int id)
 {
   //Returns the smallest key in the map
-  multimap<variant, variant>::iterator it = ds_maps[id].begin();
-  return (it == ds_maps[id].end()) ? variant() : (*it).first;
+  map<unsigned int, multimap<variant, variant> >::const_iterator map_it = ds_maps.find(id);
+  if (map_it == ds_maps.end() || map_it->second.empty())
+    return variant();
+
+  return map_it->second.begin()->first;
 }
 
 variant ds_map_find_last(const unsigned int id)
 {
   //Returns the largest key in the map
-  multimap<variant, variant>::reverse_iterator rit = ds_maps[id].rbegin();
-  return ((rit == ds_maps[id].rend()) ? variant() : (*rit).first);
+  map<unsigned int, multimap<variant, variant> >::const_iterator map_it = ds_maps.find(id);
+  if (map_it == ds_maps.end() || map_it->second.empty())
+    return variant();
+
+  return map_it->second.rbegin()->first;
 }
 
 bool ds_map_exists(const unsigned int id)
@@ -1002,9 +1128,10 @@ bool ds_map_exists(const unsigned int id)
 unsigned int ds_map_duplicate(const unsigned int source)
 {
   //creates and returns a new map containing a copy of the source map
-  ds_maps.insert(pair<unsigned int, multimap<variant, variant> >(++ds_maps_maxid, multimap<variant, variant>()));
-  ds_maps[ds_maps_maxid-1] = ds_maps[source];
-  return ds_maps_maxid-1;
+  const unsigned int id = ds_maps_maxid++;
+  ds_maps.insert(pair<unsigned int, multimap<variant, variant> >(id, multimap<variant, variant>()));
+  ds_maps[id] = ds_maps[source];
+  return id;
 }
 
 std::string ds_map_write(const unsigned int id)
@@ -1014,7 +1141,7 @@ std::string ds_map_write(const unsigned int id)
   ss.width(4);
   ss.fill('0');
 
-  std::multimap<variant, variant> dsMap = ds_maps[id];
+  const std::multimap<variant, variant>& dsMap = ds_maps[id];
 
   // Write size
   ss << std::hex << dsMap.size();
@@ -1070,13 +1197,14 @@ std::string ds_map_write(const unsigned int id)
 void ds_map_read(const unsigned int id, std::string value)
 {
   std::stringstream ss;
-  int i = 4;
-  int count;
+  size_t i = 4;
+  unsigned long count_value;
 
   // Read count
-  ss << std::hex << value.substr(0, 4);
-  ss >> count;
-  ss.clear();
+  if (!ds_read_hex(value, 0, 4, count_value))
+    return;
+
+  const unsigned int count = static_cast<unsigned int>(count_value);
 
   for (int j = 0; j < count; ++j)
   {
@@ -1084,46 +1212,64 @@ void ds_map_read(const unsigned int id, std::string value)
     int type;
 
     // Read type
-    ss << std::hex << value.substr(i, 2);
-    ss >> type;
-    ss.clear();
+    unsigned long type_value;
+    if (!ds_read_hex(value, i, 2, type_value))
+      return;
+
+    type = static_cast<int>(type_value);
+
     i += 2;
 
     if (type == 0)
     {
-      string b;
-      ss << std::hex << value.substr(i, 16);
-      ss >> b;
-      double d = atof(b.c_str());
+      unsigned long raw;
+      if (!ds_read_hex(value, i, 16, raw))
+        return;
 
-      ss.clear();
       i += 16;
+
+      string b = value.substr(i - 16, 16);
+      char *end = nullptr;
+      const double d = strtod(b.c_str(), &end);
+      if (end == b.c_str())
+        return;
 
       variKey.rval.d = d;
       variKey.type = ty_real;
     }
     else
     {
-      int len;
+      unsigned long len_value;
 
       // Read length
-      ss << std::hex << value.substr(i, 4);
-      ss >> len;
-      ss.clear();
+      if (!ds_read_hex(value, i, 4, len_value))
+        return;
+
       i += 4;
+      
+      if (len_value > value.size() - i)
+        return;
+
+      const size_t len = static_cast<size_t>(len_value);
 
       variKey = value.substr(i, len);
       i += len;
     }
 
     // Read type
-    ss << std::hex << value.substr(i, 2);
-    ss >> type;
-    ss.clear();
+    unsigned long type_value;
+    if (!ds_read_hex(value, i, 2, type_value))
+      return;
+
+    type = static_cast<int>(type_value);
+    
     i += 2;
 
     if (type == 0)
     {
+      if (!ds_read_has_bytes(value, i, 16))
+        return;	
+		
       string b;
       ss << std::hex << value.substr(i, 16);
       ss >> b;
@@ -1137,13 +1283,18 @@ void ds_map_read(const unsigned int id, std::string value)
     }
     else
     {
-      int len;
+      unsigned long len_value;
 
       // Read length
-      ss << std::hex << value.substr(i, 4);
-      ss >> len;
-      ss.clear();
+      if (!ds_read_hex(value, i, 4, len_value))
+        return;
+
       i += 4;
+      
+      if (len_value > value.size() - i)
+        return;
+
+      const size_t len = static_cast<size_t>(len_value);
 
       variValue = value.substr(i, len);
       i += len;
@@ -1174,7 +1325,9 @@ unsigned int ds_list_create()
 void ds_list_destroy(const unsigned int id)
 {
   //Destroys the list
-  ds_lists.erase(ds_lists.find(id));
+  map<unsigned int, vector<variant> >::iterator it = ds_lists.find(id);
+  if (it != ds_lists.end())
+    ds_lists.erase(it);
 }
 
 void ds_list_clear(const unsigned int id)
@@ -1211,27 +1364,26 @@ void ds_list_add(const unsigned int id, const enigma::varargs &values)
 void ds_list_insert(const unsigned int id, const unsigned int pos, const variant val)
 {
   //Inserts val and the given pos in the list
-
-  if (pos <= ds_lists[id].size())
-  {
+  if (pos < 0 || static_cast<size_t>(pos) > ds_lists[id].size())
+    return;
     ds_lists[id].insert(ds_lists[id].begin() + pos, val);
-  }
 }
 
-void ds_list_replace(const unsigned int id, const unsigned int pos, const variant val)
+void ds_list_replace(const unsigned int id, const unsigned int pos, const variant value)
 {
   //replaces the value at pos with the val in the list
-  if (pos < ds_lists[id].size())
+  if (pos < 0 || static_cast<size_t>(pos) >= ds_lists[id].size())
   {
-    ds_lists[id][pos] = val;
+    ds_lists[id][pos] = value;
   }
 }
 
 void ds_list_delete(const unsigned int id, const unsigned int pos)
 {
   //deletes the value at the given pos in the list
-  if (pos < ds_lists[id].size())
-  {
+  if (pos < 0 || static_cast<size_t>(pos) >= ds_lists[id].size())
+    return;
+
     ds_lists[id].erase(ds_lists[id].begin() + pos);
   }
 }
@@ -1239,7 +1391,7 @@ void ds_list_delete(const unsigned int id, const unsigned int pos)
 void ds_list_delete(const unsigned int id, const unsigned int first, const unsigned int last)
 {
   //Deletes the values in the range between first and last
-  if (first < ds_lists[id].size() && last < ds_lists[id].size())
+  if (first <= last && first < ds_lists[id].size() && last < ds_lists[id].size())
   {
     ds_lists[id].erase(ds_lists[id].begin() + first, ds_lists[id].begin() + last+1);
   }
@@ -1260,8 +1412,16 @@ int ds_list_find_index(const unsigned int id, const variant val)
 variant ds_list_find_value(const unsigned int id, const unsigned int pos)
 {
   //Returns the value stored at the indicated position in the list
-  vector<variant>::iterator it = ds_lists[id].begin() + pos;
-  return ((it == ds_lists[id].end()) ? variant() : (*it));
+  map<unsigned int, vector<variant> >::const_iterator list_it =
+      ds_lists.find(id);
+
+  if (list_it == ds_lists.end() ||
+      pos < 0 ||
+      static_cast<size_t>(pos) >= list_it->second.size())
+
+     return variant();
+
+  return list_it->second[pos];
 }
 
 void ds_list_sort(const unsigned int id, const bool ascend)
@@ -1292,9 +1452,11 @@ bool ds_list_exists(const unsigned int id)
 unsigned int ds_list_duplicate(const unsigned int source)
 {
   //creates and returns a new list containing a copy of the source list
-  ds_lists.insert(pair<unsigned int, vector<variant> >(++ds_lists_maxid, vector<variant>()));
-  ds_lists[ds_lists_maxid-1] = ds_lists[source];
-  return ds_lists_maxid-1;
+  const unsigned int id = ds_lists_maxid++;
+  ds_lists.insert(pair<unsigned int, vector<variant> >(
+      id, vector<variant>()));
+  ds_lists[id] = ds_lists[source];
+  return id;
 }
 
 std::string ds_list_write(const unsigned int id)
@@ -1304,7 +1466,7 @@ std::string ds_list_write(const unsigned int id)
   ss.width(4);
   ss.fill('0');
 
-  std::vector<variant> dsList = ds_lists[id];
+  const vector<variant>& dsList = ds_lists[id];
 
   // Write count
   ss << dsList.size();
@@ -1339,8 +1501,14 @@ void ds_list_read(const unsigned int id, std::string value)
   std::stringstream ss;
   int i = 4;
   int count;
+  const auto has_bytes = [&value](size_t pos, size_t count) {
+    return pos <= value.size() && count <= value.size() - pos;
+  };
 
   // Read count
+  if (!has_bytes(0, 4))
+    return;
+
   ss << std::hex << value.substr(0, 4);
   ss >> count;
   ss.clear();
@@ -1410,7 +1578,9 @@ unsigned int ds_priority_create()
 void ds_priority_destroy(const unsigned int id)
 {
   //Destroys the priority queue
-  ds_prioritys.erase(ds_prioritys.find(id));
+  map<unsigned int, multimap<variant, variant> >::iterator it = ds_prioritys.find(id);
+  if (it != ds_prioritys.end())
+    ds_prioritys.erase(it);
 }
 
 void ds_priority_clear(const unsigned int id)
@@ -1446,42 +1616,70 @@ void ds_priority_add(const unsigned int id, const variant val, const variant pri
 void ds_priority_change_priority(const unsigned int id, const variant val, const variant prio)
 {
   //Changes the priority of the given value in the priority queue
-  multimap<variant, variant>::iterator it = ds_prioritys[id].find(val);
-  if (it != ds_prioritys[id].end())
-  {
-    ds_prioritys[id].erase(it);
-    ds_prioritys[id].insert(pair<variant, variant>(val, prio));
+  map<unsigned int, multimap<variant, variant> >::iterator priority_it =
+      ds_prioritys.find(id);
+  if (priority_it == ds_prioritys.end())
+    return;
+
+  multimap<variant, variant>::iterator it =
+      priority_it->second.find(val);
+  if (it != priority_it->second.end())
+   {
+
+    priority_it->second.erase(it);
+    priority_it->second.insert(pair<variant, variant>(val, prio))
   }
 }
 
 variant ds_priority_find_priority(const unsigned int id, const variant val)
 {
   //Returns the priority of the given value in the priority queue
-  multimap<variant, variant>::iterator it = ds_prioritys[id].find(val);
-  return ((it == ds_prioritys[id].end()) ? variant() : (*it).second);
+  map<unsigned int, multimap<variant, variant> >::const_iterator priority_it =
+      ds_prioritys.find(id);
+  if (priority_it == ds_prioritys.end())
+    return variant();
+
+  multimap<variant, variant>::const_iterator it =
+      priority_it->second.find(val);
+  return (it == priority_it->second.end()) ? variant() : it->second;
 }
 
 void ds_priority_delete_value(const unsigned int id, const variant val)
 {
   //Deletes the given value (with its priority) from the priority queue
-  multimap<variant, variant>::iterator it = ds_prioritys[id].find(val);
-  if (it != ds_prioritys[id].end())
-  {
-    ds_prioritys[id].erase(it);
+  map<unsigned int, multimap<variant, variant> >::iterator priority_it =
+      ds_prioritys.find(id);
+  if (priority_it == ds_prioritys.end())
+    return;
+
+  multimap<variant, variant>::iterator it =
+      priority_it->second.find(val);
+  if (it != priority_it->second.end())
+
+   {
+    priority_it->second.erase(it);
   }
 }
 
 bool ds_priority_value_exists(const unsigned int id, const variant val)
 {
   //returns whether the value exists in the priority queue
-  return (ds_prioritys[id].find(val) != ds_prioritys[id].end());
+  map<unsigned int, multimap<variant, variant> >::const_iterator priority_it =
+      ds_prioritys.find(id);
+  return priority_it != ds_prioritys.end() &&
+         priority_it->second.find(val) != priority_it->second.end();
 }
 
 variant ds_priority_delete_min(const unsigned int id)
 {
-  //Returns the value with the smallest priority but does not delete it from the priority queue
-  multimap<variant, variant>::iterator it = ds_prioritys[id].begin(), it_check;
-  if (it == ds_prioritys[id].end()) {return 0;}
+  //Returns and deletes the value with the smallest priority from the priority queue
+  map<unsigned int, multimap<variant, variant> >::iterator priority_it =
+      ds_prioritys.find(id);
+  if (priority_it == ds_prioritys.end())
+    return variant();
+
+  multimap<variant, variant>::iterator it = priority_it->second.begin(), it_check;
+  if (it == priority_it->second.end()) {return 0;}
   it_check = it++;
   while (it != ds_prioritys[id].end())
   {
@@ -1509,7 +1707,7 @@ variant ds_priority_find_min(const unsigned int id)
 
 variant ds_priority_delete_max(const unsigned int id)
 {
-  //Returns the value with the smallest priority but does not delete it from the priority queue
+  //Returns and deletes the value with the largest priority from the priority queue
   multimap<variant, variant>::iterator it = ds_prioritys[id].begin(), it_check;
   if (it == ds_prioritys[id].end()) {return variant();}
   it_check = it++;
@@ -1546,9 +1744,9 @@ bool ds_priority_exists(const unsigned int id)
 unsigned int ds_priority_duplicate(const unsigned int source)
 {
   //creates and returns a new priority queue containing a copy of the source priority queue
-  ds_prioritys.insert(pair<unsigned int, multimap<variant, variant> >(++ds_prioritys_maxid, multimap<variant, variant>()));
-  ds_prioritys[ds_prioritys_maxid-1] = ds_prioritys[source];
-  return ds_prioritys_maxid-1;
+  const unsigned int id = ds_prioritys_maxid++;
+  ds_prioritys.insert(pair<unsigned int, multimap<variant, variant> >(id, ds_prioritys[source]));
+  return id;;
 }
 
 std::string ds_priority_write(const unsigned int id)
@@ -1558,7 +1756,7 @@ std::string ds_priority_write(const unsigned int id)
   ss.width(4);
   ss.fill('0');
 
-  std::multimap<variant, variant> dsPriority = ds_prioritys[id];
+  const std::multimap<variant, variant>& dsPriority = ds_prioritys[id];
 
   // Write size
   ss << std::hex << dsPriority.size();
@@ -1599,28 +1797,38 @@ std::string ds_priority_write(const unsigned int id)
 void ds_priority_read(const unsigned int id, std::string value)
 {
   std::stringstream ss;
-  int i = 4;
-  int count;
+  size_t i = 4;
+  unsigned long count_value;
 
   // Read count
-  ss << std::hex << value.substr(0, 4);
-  ss >> count;
-  ss.clear();
+  if (!ds_read_hex(value, 0, 4, count_value))
+    return;
+
+  const unsigned int count = static_cast<unsigned int>(count_value);
 
   for (int j = 0; j < count; ++j)
   {
     variant vari, prio;
     int type;
+    
+    if (!ds_read_has_bytes(value, i, 18))
+      return;
 
     prio.type = ty_real;
 
     // Read type
-    ss << std::hex << value.substr(i, 2);
-    ss >> type;
-    ss.clear();
+    unsigned long type_value;
+    if (!ds_read_hex(value, i, 2, type_value))
+      return;
+
+    type = static_cast<int>(type_value);
+    
     i += 2;
 
     // Read priority
+    if (!ds_read_has_bytes(value, i, 16))
+      return;
+    
     string b;
     ss << std::hex << value.substr(i, 16);
     ss >> b;
@@ -1645,14 +1853,18 @@ void ds_priority_read(const unsigned int id, std::string value)
     }
     else
     {
-      int len;
+      unsigned long len_value;
 
       // Read length
-      ss << std::hex << value.substr(i, 4);
-      ss >> len;
-      ss.clear();
+      if (!ds_read_hex(value, i, 4, len_value))
+        return;
+            
       i += 4;
 
+      if (len_value > value.size() - i)
+        return;
+
+      const size_t len = static_cast<size_t>(len_value);
       vari = value.substr(i, len);
       i += len;
     }
@@ -1682,7 +1894,9 @@ unsigned int ds_queue_create()
 void ds_queue_destroy(const unsigned int id)
 {
   //Destroys the queue
-  ds_queues.erase(ds_queues.find(id));
+  map<unsigned int, deque<variant> >::iterator it = ds_queues.find(id);
+  if (it != ds_queues.end())
+    ds_queues.erase(it);
 }
 
 void ds_queue_clear(const unsigned int id)
@@ -1749,9 +1963,10 @@ bool ds_queue_exists(const unsigned int id)
 unsigned int ds_queue_duplicate(const unsigned int source)
 {
   //creates and returns a new queue containing a copy of the source queue
-  ds_queues.insert(pair<unsigned int, deque<variant> >(++ds_queues_maxid, deque<variant>()));
-  ds_queues[ds_queues_maxid-1] = ds_queues[source];
-  return ds_queues_maxid-1;
+  const unsigned int id = ds_queues_maxid++;
+  ds_queues.insert(pair<unsigned int, deque<variant> >(id, deque<variant>()));
+  ds_queues[id] = ds_queues[source];
+  return id;
 }
 
 std::string ds_queue_write(const unsigned int id)
@@ -1866,7 +2081,9 @@ unsigned int ds_stack_create()
 void ds_stack_destroy(const unsigned int id)
 {
   //Destroys the stack
-  ds_stacks.erase(ds_stacks.find(id));
+  map<unsigned int, deque<variant> >::iterator it = ds_stacks.find(id);
+  if (it != ds_stacks.end())
+    ds_stacks.erase(it);
 }
 
 void ds_stack_clear(const unsigned int id)
@@ -1926,9 +2143,10 @@ bool ds_stack_exists(const unsigned int id)
 unsigned int ds_stack_duplicate(const unsigned int source)
 {
   //creates and returns a new stack containing a copy of the source stack
-  ds_stacks.insert(pair<unsigned int, deque<variant> >(++ds_stacks_maxid, deque<variant>()));
-  ds_stacks[ds_stacks_maxid-1] = ds_stacks[source];
-  return ds_stacks_maxid-1;
+  const unsigned int id = ds_stacks_maxid++;
+  ds_stacks.insert(pair<unsigned int, deque<variant> >(id, deque<variant>()));
+  ds_stacks[id] = ds_stacks[source];
+  return id;
 }
 
 std::string ds_stack_write(const unsigned int id)
