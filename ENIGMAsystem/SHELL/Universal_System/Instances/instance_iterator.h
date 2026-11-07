@@ -32,7 +32,7 @@ class iterator {
   void copy(const iterator& other);
 
  public:
-  operator bool();
+  operator bool() const;
   object_basic* operator*() const;
   object_basic* operator->() const;
 
