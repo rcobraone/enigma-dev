@@ -121,6 +121,11 @@ void mp_grid_clear_all(unsigned id, unsigned cost)
 
 void mp_grid_clear_cell(unsigned id,int h,int v, unsigned cost)
 {
+    if (h < 0 || v < 0 ||
+        h >= int(enigma::gridstructarray[id]->hcells) ||
+        v >= int(enigma::gridstructarray[id]->vcells))
+        return;
+	
     enigma::gridstructarray[id]->nodearray[h*enigma::gridstructarray[id]->vcells+v].cost = cost;
     if (enigma::gridstructarray[id]->threshold<cost){enigma::gridstructarray[id]->threshold=cost;}
 }
@@ -176,6 +181,11 @@ void mp_grid_clear_rectangle(unsigned id,double x1,double y1,double x2,double y2
 
 void mp_grid_add_cell(unsigned id,int h,int v, unsigned cost)
 {
+    if (h < 0 || v < 0 ||
+        h >= int(enigma::gridstructarray[id]->hcells) ||
+        v >= int(enigma::gridstructarray[id]->vcells))
+        return;
+	
     unsigned max_cost=enigma::gridstructarray[id]->nodearray[h*enigma::gridstructarray[id]->vcells+v].cost;
     enigma::gridstructarray[id]->nodearray[h*enigma::gridstructarray[id]->vcells+v].cost = cost;
     if (cost>max_cost){max_cost=cost;}
@@ -184,6 +194,11 @@ void mp_grid_add_cell(unsigned id,int h,int v, unsigned cost)
 
 unsigned mp_grid_get_cell(unsigned id,int h,int v)
 {
+    if (h < 0 || v < 0 ||
+        h >= int(enigma::gridstructarray[id]->hcells) ||
+        v >= int(enigma::gridstructarray[id]->vcells))
+        return 0;
+	
     return enigma::gridstructarray[id]->nodearray[h*enigma::gridstructarray[id]->vcells+v].cost;
 }
 
