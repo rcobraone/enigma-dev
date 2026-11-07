@@ -22,6 +22,7 @@
 #include <string>
 #include <memory>
 #include <limits>
+#include <new>
 
 namespace enigma {
 
@@ -39,13 +40,25 @@ return nullptr;
      ? reinterpret_cast<const Bytef*>(inbuffer)
      : &empty_input;
 
- uLongf outsize = compressBound(static_cast<uLong>(actualsize));
+  const uLong input_size = static_cast<uLong>(actualsize);
+  const uLong output_bound = compressBound(input_size);
 
- std::unique_ptr<Bytef[]> outbytef(new Bytef[outsize]);
+  // Detect possible integer overflow in compressBound().
+  if (output_bound < input_size
+    return nullptr;
+
+  uLongf outsize = static_cast<uLongf>(output_bound);
+
+  std::unique_ptr<Bytef[]> outbytef(
+      new (std::nothrow) Bytef[outsize]
+  );
+
+  if (!outbytef)
+    return nullptr;
 
     int res=compress(outbytef.get(),&outsize,
                      input,
-                     static_cast<uLong>(actualsize));
+                     input_size);
 
     if (res != Z_OK)
     {
@@ -55,7 +68,6 @@ return nullptr;
      if (res==Z_BUF_ERROR)
      DEBUG_MESSAGE("Zlib failed to compress the buffer. Output size greater than allotted.", MESSAGE_TYPE::M_ERROR);
      #endif
-     delete[] outbytef;
      return nullptr;     
     }
 
