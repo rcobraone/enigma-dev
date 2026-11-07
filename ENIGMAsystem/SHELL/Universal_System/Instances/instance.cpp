@@ -33,20 +33,10 @@
 #include "instance.h"
 
 #include <map>
-#include <string>
-#include <sstream>
-#include <math.h>
-#include <stdio.h>
 #include <limits>
 #include <cstddef>
+#include <utility>
 
-namespace {
- inline std::string pointer2string(void* ptr) {
-   std::stringstream ss;
-   ss << ptr;  
-   return  ss.str(); 
- }
-}
 
 namespace enigma
 {
@@ -62,7 +52,7 @@ void instance_deactivate_all(bool notme) {
   enigma::object_basic *self =
       enigma::instance_event_iterator
           ? enigma::instance_event_iterator->inst
-          : NULL;
+          : nullptr;
 	
   enigma::iterator it = enigma::instance_list_first();
   while (it) {
@@ -82,6 +72,7 @@ void instance_deactivate_all(bool notme) {
     // Do not register an instance that was removed during deactivate().
     const auto live = enigma::instance_list.find(id);
     if (live != enigma::instance_list.end() &&
+        live->second &&
         live->second->inst == inst) {
       enigma::instance_deactivated_list.insert(inode_pair(id, inst));
     }
@@ -97,14 +88,35 @@ void instance_activate_all() {
 
     auto iter = enigma::instance_deactivated_list.begin();
     while (iter != enigma::instance_deactivated_list.end()) {
-        const int id = iter->first;
+       
         enigma::object_basic* const inst = iter->second;
+
+        const auto live = enigma::instance_list.find(id);
+        if (!inst || live == enigma::instance_list.end() ||
+            !live->second || live->second->inst != inst) {
+            iter = enigma::instance_deactivated_list.erase(iter);
+            continue;
+        }
+        
+        if (!inst) {
+            iter = enigma::instance_deactivated_list.erase(iter);
+            continue;
+
+        }
+        
         std::map<int,enigma::object_basic*>::const_iterator next = iter;
         ++next;
         const bool has_next =
             next != enigma::instance_deactivated_list.end();
         const int next_id = has_next ? next->first : 0;
-       
+
+        if (!inst) {
+            enigma::instance_deactivated_list.erase(iter);
+            iter = has_next
+                ? enigma::instance_deactivated_list.lower_bound(next_id)
+                : enigma::instance_deactivated_list.end();
+            continue;
+        }
 
         enigma::instance_deactivated_list.erase(iter);
         inst->activate();
@@ -127,6 +139,7 @@ void instance_deactivate_object(int obj) {
 
     const auto live = enigma::instance_list.find(id);
     if (live != enigma::instance_list.end() &&
+        live->second &&
         live->second->inst == inst) {
       enigma::instance_deactivated_list.insert(inode_pair(id, inst));
     }
@@ -140,15 +153,34 @@ void instance_deactivate_object(int obj) {
 void instance_activate_object(int obj) {
     auto iter = enigma::instance_deactivated_list.begin();
     while (iter != enigma::instance_deactivated_list.end()) {
-		const int id = iter->first;
+		
         enigma::object_basic* const inst = iter->second;
+
+        const auto live = enigma::instance_list.find(id);
+        if (!inst || live == enigma::instance_list.end() ||
+            !live->second || live->second->inst != inst) {
+            iter = enigma::instance_deactivated_list.erase(iter);
+            continue;
+        }
         
+        if (!inst) {
+            iter = enigma::instance_deactivated_list.erase(iter);
+            continue;
+        }
+       
             std::map<int,enigma::object_basic*>::const_iterator next = iter;
             ++next;
             const bool has_next =
                 next != enigma::instance_deactivated_list.end();
             const int next_id = has_next ? next->first : 0;
 
+        if (!inst) {
+            enigma::instance_deactivated_list.erase(iter);
+            iter = has_next
+                ? enigma::instance_deactivated_list.lower_bound(next_id)
+                : enigma::instance_deactivated_list.end();
+            continue;
+        }
 
         if (obj == all ||
             (obj < 100000
@@ -196,7 +228,7 @@ void instance_destroy()
   enigma::object_basic* const a =
       enigma::instance_event_iterator
           ? enigma::instance_event_iterator->inst
-          : NULL;
+          : nullptr;
 
   if (!a)
     return;
@@ -237,25 +269,32 @@ enigma::instance_t instance_find(int obj, int num)
   if (num < 0)
     return noone;
 	
-  int nth = 0;
+  std::size_t nth = 0;
+  const std::size_t target = static_cast<std::size_t>(num);
+
   for (enigma::iterator it = enigma::fetch_inst_iter_by_int(obj); it; ++it)
   {
-    if (nth == num)
-      return (int)it->id;
+    if (nth == target)
+      return static_cast<enigma::instance_t>(it->id);
+
     ++nth;
   }
+  
   return noone;
 }
 
 enigma::instance_t instance_last(int obj) {
   if (obj < 0 ||
-      static_cast<size_t>(obj) >= enigma::object_idmax) {
+      static_cast<std::size_t>(obj) >= enigma::object_idmax) {
     return noone;
   }
 
-  return (enigma::objects[obj].count > 0)
-      ? static_cast<int>(enigma::objects[obj].prev->inst->id)
-      : noone;
+  const auto& object = enigma::objects[obj];
+
+  if (object.count == 0 || !object.prev || !object.prev->inst)
+    return noone;
+
+  return static_cast<enigma::instance_t>(object.prev->inst->id);
 }
 
 int instance_number(int obj)
@@ -277,7 +316,7 @@ int instance_number(int obj)
       }
     default:
        if (obj < 0) return 0;
-       if (static_cast<size_t>(obj) >= enigma::object_idmax)
+       if (static_cast<std::size_t>(obj) >= enigma::object_idmax)
         return 0;
   }
   return instance_count_to_int(enigma::objects[obj].count);
