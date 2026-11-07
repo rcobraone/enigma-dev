@@ -22,7 +22,11 @@ namespace enigma
 {
   void instance_change_inst(int obj, bool perf, object_graphics* inst)
   {
-      if (inst->object_index == obj) return; //prevents infinite loop
+	  if (!inst) return;
+      if (inst->object_index == obj) return; //prevents infinite loop     
+
+      // Validate the replacement before destroying the current instance.
+      if (!enigma_user::object_exists(obj)) return;
 
       double  x=inst->x, y=inst->y;
       double  xprevious=inst->xprevious, yprevious=inst->yprevious;
