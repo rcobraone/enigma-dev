@@ -98,7 +98,7 @@ void path_set_position(cs_scalar position, bool relative)
     if (relative)
     {
         inst->x = path_get_x(inst_paths->path_index , inst_paths->path_position);
-        inst->x = path_get_y(inst_paths->path_index , inst_paths->path_position);
+        inst->y = path_get_y(inst_paths->path_index, inst_paths->path_position);
     }
 }
 
@@ -120,6 +120,9 @@ bool path_update()
   enigma::path *path = enigma::pathstructarray[inst_paths->path_index];
   if (!path)
     return false;
+    
+    if (fzero(path->total_length))
+        return false;   
 
   bool at_end = false;
   cs_scalar pstep = inst_paths->path_speed / path->total_length;
@@ -201,6 +204,9 @@ int path_duplicate(unsigned pathid)
 
 void path_copy(unsigned pathid, unsigned srcid)
 {
+	if (pathid == path)
+        return
+        
     enigma::pathstructarray[pathid]->pointarray.clear();
     enigma::path *pa = enigma::pathstructarray[pathid];
     enigma::path *pa2 = enigma::pathstructarray[srcid];
@@ -296,6 +302,10 @@ cs_scalar path_get_speed(unsigned pathid, double t)
 
 double path_get_direction(unsigned pathid, double t)
 {
+    if (!path_exists(pathid) ||
+        enigma::pathstructarray[pathid]->pointarray.empty())
+        return 0;
+	
     cs_scalar x1,y1,x2,y2,p1,p2,precision;
     precision = 0.0005;
 
@@ -409,25 +419,24 @@ void path_add_point(unsigned pathid, cs_scalar x, cs_scalar y, cs_scalar speed)
 
 void path_insert_point(unsigned pathid, unsigned n, cs_scalar x, cs_scalar y, cs_scalar speed)
 {
-    #ifdef DEBUG_MODE
-    if (n>enigma::pathstructarray[pathid]->pointarray.size()){
+
+    if (n > enigma::pathstructarray[pathid]->pointarray.size()){
         DEBUG_MESSAGE("Attempting to insert point in invalid place " + toString(n) + " for path "+ toString(pathid), MESSAGE_TYPE::M_ERROR);
         return;
     }
-    #endif
+
     enigma::path_point point(x,y,speed/100);
     enigma::pathstructarray[pathid]->pointarray.insert(enigma::pathstructarray[pathid]->pointarray.begin() + n,point);
     enigma::path_recalculate(pathid);
 }
 
 void path_change_point(unsigned pathid, unsigned n, cs_scalar x, cs_scalar y, cs_scalar speed)
-{
-    #ifdef DEBUG_MODE
-    if (n>enigma::pathstructarray[pathid]->pointarray.size()){
+{    
+    if (n >= enigma::pathstructarray[pathid]->pointarray.size()){
         DEBUG_MESSAGE("Attempting to change invalid point " + toString(n) + " for path "+toString(pathid), MESSAGE_TYPE::M_ERROR);
         return;
     }
-    #endif
+
     enigma::pathstructarray[pathid]->pointarray[n].x = x;
     enigma::pathstructarray[pathid]->pointarray[n].y = y;
     enigma::pathstructarray[pathid]->pointarray[n].speed = speed/100;
@@ -436,12 +445,12 @@ void path_change_point(unsigned pathid, unsigned n, cs_scalar x, cs_scalar y, cs
 
 void path_delete_point(unsigned pathid, unsigned n)
 {
-    #ifdef DEBUG_MODE
-    if (n>enigma::pathstructarray[pathid]->pointarray.size()){
+
+    if (n >= enigma::pathstructarray[pathid]->pointarray.size()){
         DEBUG_MESSAGE("Attempting to delete invalid point " + toString(n) + " for path "+toString(pathid), MESSAGE_TYPE::M_ERROR);
         return;
     }
-    #endif
+
     enigma::pathstructarray[pathid]->pointarray.erase(enigma::pathstructarray[pathid]->pointarray.begin()+n);
     enigma::path_recalculate(pathid);
 }
