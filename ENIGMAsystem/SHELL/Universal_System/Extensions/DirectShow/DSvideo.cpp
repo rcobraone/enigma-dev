@@ -57,7 +57,8 @@ int video_add(string fname) {
     if (FAILED(hr))
     {
 	   MessageBox(NULL, "Failed to initialize COM library.", "ERROR", MB_ICONERROR | MB_OK);
-        return -1;
+	   delete videoStruct;
+       return -1;
     }
 
     // Create the filter graph manager and query for interfaces.
@@ -66,20 +67,30 @@ int video_add(string fname) {
     if (FAILED(hr))
     {
 		MessageBox(NULL, "Failed to create the Filter Graph Manager.", "ERROR", MB_ICONERROR | MB_OK);
+		delete videoStruct;
         return -1;
     }
 	
 	
 	// Build the graph.
     hr = pGraph->RenderFile(std::wstring(fname.begin(), fname.end()).c_str(), NULL);
-	
+	if (FAILED(hr))
+    {
+        delete videoStruct;
+        pGraph->Release();
+        return -1;
+    }
 	IVideoWindow *pVidWin = NULL;
-	pGraph->QueryInterface(IID_IVideoWindow, (void **)&pVidWin);
+    hr = pGraph->QueryInterface(IID_IVideoWindow, (void **)&pVidWin);
+    if (FAILED(hr) || pVidWin == NULL)
+    {
+      delete videoStruct;
+      return -1;
+    }
 	
-	pVidWin->put_Owner((OAHWND)enigma::hWnd);
-	
-	pVidWin->put_WindowStyle(WS_CHILD | WS_CLIPSIBLINGS);
-	
+	pVidWin->put_Owner((OAHWND)enigma::hWnd);	
+	pVidWin->put_WindowStyle(WS_CHILD | WS_CLIPSIBLINGS);	
+	pVidWin->Release();
 	videoStruct->pGraph = pGraph;
 	enigma::videoStructs.push_back(videoStruct);
 	return enigma::videoStructs.size() - 1;
@@ -88,10 +99,13 @@ int video_add(string fname) {
 void video_delete(int id) {
 	get_video(videoStruct, id);
 	delete enigma::videoStructs[id];
+	enigma::videoStructs[id] = NULL;
 }
 
 bool video_exists(int id) {
-	return (enigma::videoStructs[id] != NULL);
+    return id >= 0 &&
+           static_cast<size_t>(id) < enigma::videoStructs.size() &&
+           enigma::videoStructs[id] != NULL;
 }
 
 void video_start(int id, bool loop) {
@@ -99,19 +113,23 @@ void video_start(int id, bool loop) {
 	IMediaControl *pControl = NULL;
     IMediaEvent   *pEvent = NULL;
     HRESULT hr = videoStruct->pGraph->QueryInterface(IID_IMediaControl, (void **)&pControl);
+     if (FAILED(hr) || pControl == NULL)
+       return;
+       
     hr = videoStruct->pGraph->QueryInterface(IID_IMediaEvent, (void **)&pEvent);
+	 if (FAILED(hr) || pEvent == NULL)
+     {
+       pControl->Release();
+       return;
+     }
 	
 	// Run the graph.
     hr = pControl->Run();
     while (SUCCEEDED(hr)) {
-        if (SUCCEEDED(hr)) {
-            // Wait for completion.
-            long evCode;
-            pEvent->WaitForCompletion(INFINITE, &evCode);
-        } else {
-			MessageBox(NULL, "Failed to run the COM control.", "ERROR", MB_ICONERROR | MB_OK);
-			// Don't return so pointers can be released.
-		}
+        long evCode = 0;
+        hr = pEvent->WaitForCompletion(INFINITE, &evCode);
+        if (FAILED(hr))
+          break;
 		
 		if (loop) {
 			video_set_seek(id, 0);
@@ -139,8 +157,10 @@ void video_stop(int id) {
 
 void video_set_seek(int id, long position) {
 	get_video(videoStruct, id);
-	IMediaSeeking* pSeek;
+	IMediaSeeking* pSeek = NULL;
 	HRESULT hr = videoStruct->pGraph->QueryInterface(IID_IMediaSeeking, (void**)&pSeek);
+	if (FAILED(hr) || pSeek == NULL)
+       return;
 	DWORD dwCap = 0;
 	hr = pSeek->GetCapabilities(&dwCap);
 		
@@ -159,9 +179,11 @@ void video_set_seek(int id, long position) {
 
 void video_set_rate(int id, double rate) {
 	get_video(videoStruct, id);
-	IMediaSeeking* pSeek;
+	IMediaSeeking* pSeek = NULL;
 	HRESULT hr = videoStruct->pGraph->QueryInterface(IID_IMediaSeeking, (void**)&pSeek);
-	
+	if (FAILED(hr) || pSeek == NULL)
+      return;
+
 	// Set the playback rate, can not be 0
 	hr = pSeek->SetRate(rate);
 
@@ -171,17 +193,25 @@ void video_set_rate(int id, double rate) {
 void video_set_fullscreen(int id, bool fullscreen) {
 	get_video(videoStruct, id);
 	IVideoWindow *pVidWin = NULL;
-	videoStruct->pGraph->QueryInterface(IID_IVideoWindow, (void **)&pVidWin);
+    HRESULT hr = videoStruct->pGraph->QueryInterface(
+        IID_IVideoWindow, (void **)&pVidWin);
+    if (FAILED(hr) || pVidWin == NULL)
+      return;
 	
 	pVidWin->put_FullScreenMode(-fullscreen);
+	pVidWin->Release();
 }
 
 void video_set_window_region(int id, long x, long y, long w, long h) {
 	get_video(videoStruct, id);
 	IVideoWindow *pVidWin = NULL;
-	videoStruct->pGraph->QueryInterface(IID_IVideoWindow, (void **)&pVidWin);
+	HRESULT hr = videoStruct->pGraph->QueryInterface(
+        IID_IVideoWindow, (void **)&pVidWin);
+    if (FAILED(hr) || pVidWin == NULL)
+      return;
 	
 	pVidWin->SetWindowPosition(x, y, w, h);
+	pVidWin->Release();
 }
 
 void video_set_destination_region(int id, long x, long y, long w, long h) {
@@ -211,7 +241,11 @@ void video_set_source_region(int id, long x, long y, long w, long h) {
 void video_set_scale(int id, bool scale) {
 	get_video(videoStruct, id);
 	IVideoWindow *pVidWin = NULL;
-	videoStruct->pGraph->QueryInterface(IID_IVideoWindow, (void **)&pVidWin);
+    HRESULT hr = videoStruct->pGraph->QueryInterface(
+        IID_IVideoWindow, (void **)&pVidWin);
+    if (FAILED(hr) || pVidWin == NULL)
+      return;
+
 	RECT rc;
 	if (scale) {
 		GetClientRect(enigma::hWnd, &rc);
@@ -219,6 +253,7 @@ void video_set_scale(int id, bool scale) {
 		//TODO: Finish me
 	}
 	pVidWin->SetWindowPosition(0, 0, rc.right, rc.bottom);
+	pVidWin->Release();
 }
 
 long video_get_seek(int id) {
