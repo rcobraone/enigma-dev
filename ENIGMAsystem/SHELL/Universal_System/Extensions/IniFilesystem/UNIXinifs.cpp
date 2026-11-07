@@ -19,6 +19,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <sys/stat.h>
 
 #include "PFini.h"
 #include "Universal_System/estring.h"
@@ -32,10 +33,6 @@ namespace {
 //The "name" we give to files loaded from strings. Must be an invalid name for a normal file.
 const std::string IniFromStringFilename = "<IniFromString>";
 
-//List of invalid characters on Windows, which is a superset of OSX and Linux's (much smaller) sets.
-//NOTE: At the moment, we only ban NULL; there might be cause to ban other characters later.
-//      Don't forget that an absolute path can be sent, so banning "/", "\", etc., won't work.
-const std::string InvalidFilenameChars = "\0";
 
 //The name of the currently-open file. Empty string means "no open file".
 std::string currIniFile;
@@ -60,7 +57,7 @@ namespace enigma_user
 	{
 		//GM will silently fail to save anything if an invalidly-named file is selected. Since we flush the ini file on close, 
 		// we should try to filter out bad inis as early as possible (the final test will be in ini_close()).
-		if (filename.find_first_of(InvalidFilenameChars)!=std::string::npos) {
+		if (filename.find('\0') != std::string::npos) {
 			DEBUG_MESSAGE("IniFileSystem - cannot open new ini file; filename contains invalid characters.", MESSAGE_TYPE::M_ERROR);
 			return;
 		}
@@ -71,7 +68,26 @@ namespace enigma_user
 		}
 
 		//Save it.
-		currIniFile = filename;
+               struct stat fileInfo;
+               const bool fileExists = (stat(filename.c_str(), &fileInfo) == 0);
+
+               // An existing file must be readable before we replace its contents on
+               // ini_close(). Otherwise a failed read could turn into an unintended
+               // overwrite with an empty/partial INI.
+               if (fileExists) {
+                       std::ifstream infile(filename.c_str());
+                       if (!infile.good()) {
+                               DEBUG_MESSAGE("IniFileSystem - cannot open existing ini file for reading.", MESSAGE_TYPE::M_ERROR);
+                               return;
+                       }
+
+                       currIniFile = filename;
+                       currIni.load(infile, commentChar);
+                       return;
+               }
+
+               currIniFile = filename;
+
 
 		//If the file already exists, parse it.
 		//NOTE: Loading the file in its entirety is consistent with how GM handles inis.
@@ -113,7 +129,8 @@ namespace enigma_user
 		//Only act if we actually have an ini file opened.
 		if (!currIniFile.empty()) {
 			//Non-string-loaded inis are saved back to their original files.
-			if (!currIni.saveToFile(currIniFile)) {
+        if (currIniFile != IniFromStringFilename &&
+            !currIni.saveToFile(currIniFile)) {
 				DEBUG_MESSAGE("IniFileSystem - could not save ini file to output; perhaps it's in a protected location?", MESSAGE_TYPE::M_ERROR);
 			}
 
