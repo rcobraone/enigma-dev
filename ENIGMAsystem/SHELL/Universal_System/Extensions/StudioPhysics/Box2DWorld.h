@@ -51,14 +51,14 @@ struct worldInstance {
 extern vector<worldInstance*> worlds;
 
 struct fixtureInstance {
-  int world;
-  b2Body* body;
-  b2Fixture* fixture;
-  b2Shape* shape;
-  b2PolygonShape* polygonshape;
+  int world = -1;
+  b2Body* body = nullptr;
+  b2Fixture* fixture = nullptr;
+  b2Shape* shape = nullptr;
+  b2PolygonShape* polygonshape = nullptr;
   vector<b2Vec2> vertices;
 
-  fixtureInstance()
+  fixtureInstance() = default;
   {
 
   }
@@ -103,12 +103,24 @@ extern vector<fixtureInstance*> fixtures;
     } fixtureInstance* f = fixtures[id];
 #else
   #define get_worldr(w,id,r) \
+    if (id < 0 || static_cast<size_t>(id) >= worlds.size() || worlds[id] == nullptr) { \
+      return r; \
+    } \  
     worldInstance* w = worlds[id];
   #define get_world(w,id) \
+    if (id < 0 || static_cast<size_t>(id) >= worlds.size() || worlds[id] == nullptr) { \
+      return; \
+    } \  
     worldInstance* w = worlds[id];
   #define get_fixturer(f,id,r) \
+    if (id < 0 || static_cast<size_t>(id) >= fixtures.size() || fixtures[id] == nullptr) { \
+      return r; \
+    } \  
     fixtureInstance* f = fixtures[id];
   #define get_fixture(f,id) \
+    if (id < 0 || static_cast<size_t>(id) >= fixtures.size() || fixtures[id] == nullptr) { \
+      return; \
+    } \  
     fixtureInstance* f = fixtures[id];
 #endif
 
