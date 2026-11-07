@@ -39,6 +39,21 @@ struct RawImage {
   RawImage(const RawImage&) = delete;
   RawImage(RawImage &&other): pxdata(other.pxdata), w(other.w), h(other.h) {
     other.pxdata = nullptr;
+    other.w = 0;
+    other.h = 0;
+  }
+
+  RawImage& operator=(RawImage&& other) noexcept {
+    if (this != &other) {
+      delete[] pxdata;
+      pxdata = other.pxdata;
+      w = other.w;
+      h = other.h;
+      other.pxdata = nullptr;
+      other.w = 0;
+      other.h = 0;
+    }
+    return *this;
   }
   void resize(unsigned w, unsigned h) {
     const size_t sw = static_cast<size_t>(w);

@@ -34,6 +34,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <cstdio>
+#include <limits>
 
 #include "nlpo2.h"
 
@@ -59,18 +60,14 @@ Color image_get_pixel_color(const RawImage& in, unsigned x, unsigned y) {
 }
 
 void image_swap_color(RawImage& in, Color oldColor, Color newColor) {  
-  #ifdef DEBUG_MODE
-  if (in.pxdata == nullptr) {
-    in.pxdata = new unsigned char[in.w * in.h * 4];
-    std::fill(in.pxdata, in.pxdata + (in.w * in.h * 4), 255);
-    DEBUG_MESSAGE("Attempt to access a null pointer" , MESSAGE_TYPE::M_ERROR);
+if (in.pxdata == nullptr || in.w == 0 || in.h == 0) {
     return;
   }
-  #endif
+
   
   unsigned int ih, iw;
   for (ih = 0; ih < in.h; ih++) {
-    int index = ih * in.w * 4;
+    size_t index = (static_cast<size_t>(ih) * in.w) * 4u;
     
     for (iw = 0; iw < in.w; iw++) {
       if (
@@ -97,7 +94,7 @@ void image_remove_color(RawImage& in, Color oldColor) {
   for (size_t ih = 0; ih < in.h; ++ih) {
     for (size_t iw = 0; iw < in.w; ++iw) {
       const size_t index = (ih * in.w + iw) * 4u;
-           in.pxdata[index]     == oldColor.b
+           if (in.pxdata[index]     == oldColor.b
         && in.pxdata[index + 1] == oldColor.g
         && in.pxdata[index + 2] == oldColor.r
         ) {
@@ -164,6 +161,12 @@ std::vector<RawImage> image_split(const RawImage& in, unsigned imgcount) {
         base_width + (i < remainder ? 1u : 0u);
     
     const size_t row_size = static_cast<size_t>(splitWidth) * 4u;
+    if (in.h != 0 &&
+        row_size > std::numeric_limits<size_t>::max() /
+                       static_cast<size_t>(in.h)) {
+      return {};
+    }
+   
     const size_t allocation_size =
         row_size * static_cast<size_t>(in.h);
 
@@ -232,7 +235,7 @@ RawImage image_crop(const RawImage& in, unsigned newWidth, unsigned newHeight) {
   if (newWidth > in.w || newHeight > in.h)
     return RawImage();
 
-  if (in.pxdata == nullptr && newWidth != 0 && newHeight != 0)
+  if (in.pxdata == nullptr && newHeight != 0)
     return RawImage();
 
   if (newWidth != 0 &&
@@ -264,8 +267,17 @@ RawImage image_crop(const RawImage& in, unsigned newWidth, unsigned newHeight) {
 }
 
 unsigned long *bgra_to_argb(unsigned char *bgra_data, unsigned pngwidth, unsigned pngheight, bool prepend_size) {
+  if (pngwidth == 0 || pngheight == 0 || bgra_data == nullptr)
+    return nullptr;
+
   unsigned widfull = nlpo2(pngwidth), hgtfull = nlpo2(pngheight), ih, iw;
-  const int bitmap_size = widfull * hgtfull * 4;
+  if (hgtfull != 0 &&
+      static_cast<size_t>(widfull) >
+          std::numeric_limits<size_t>::max() / hgtfull / 4u)
+    return nullptr;
+
+  const size_t bitmap_size =
+      static_cast<size_t>(widfull) * hgtfull * 4u;
   unsigned char *bitmap = new unsigned char[bitmap_size]();
 
   unsigned i = 0;
@@ -292,21 +304,49 @@ unsigned long *bgra_to_argb(unsigned char *bgra_data, unsigned pngwidth, unsigne
 }
 
 unsigned char* mono_to_rgba(unsigned char* pxdata, unsigned width, unsigned height) {
-  unsigned char* rgba = new unsigned char[width * height * 4];
-  for (unsigned i = 0; i < width * height; ++i) {
-    unsigned index_out = i * 4;
+  if (pxdata == nullptr || width == 0 || height == 0)
+    return nullptr;
+
+const size_t w = static_cast<size_t>(width);
+const size_t h = static_cast<size_t>(height);
+
+  if (h != 0 &&
+    w > std::numeric_limits<size_t>::max() / h)
+  return nullptr;
+
+const size_t pixel_count = w * h;
+
+  if (pixel_count >
+      std::numeric_limits<size_t>::max() / 4u)
+    return nullptr;
+
+  const size_t output_size = pixel_count * 4u;
+  unsigned char* rgba = new unsigned char[output_size];
+
+  for (size_t i = 0; i < pixel_count; ++i) {
+    const size_t index_out = i * 4u;
     rgba[index_out] = rgba[index_out + 1] = rgba[index_out + 2] = 255;
     rgba[index_out + 3] = pxdata[i];
   }
   return rgba;
 }
 
-void image_add_loader(const std::filesystem::path& extension, ImageLoadFunction fnc) {
-  image_load_handlers[extension] = fnc;
+void image_add_loader(
+    const std::filesystem::path& extension,
+    ImageLoadFunction fnc
+) {
+  image_load_handlers[
+      std::filesystem::path(ToLower(extension.u8string()))
+  ] = std::move(fnc);
 }
 
-void image_add_saver(const std::filesystem::path& extension, ImageSaveFunction fnc) {
-  image_save_handlers[extension] = fnc;
+void image_add_saver(
+    const std::filesystem::path& extension,
+    ImageSaveFunction fnc
+) {
+  image_save_handlers[
+      std::filesystem::path(ToLower(extension.u8string()))
+  ] = std::move(fnc);
 }
 
 void image_flip(RawImage& in) {
@@ -349,7 +389,7 @@ std::vector<RawImage> image_load(const std::filesystem::path& filename) {
   }
   
   auto handler = image_load_handlers.find(ToLower(extension.u8string()));
-  if (handler != image_load_handlers.end()) {
+  if (handler != image_load_handlers.end() && handler->second) {
     return (*handler).second(filename);
   } else {
     DEBUG_MESSAGE("Unsupported image format extension in image filename: " + filename.u8string() , MESSAGE_TYPE::M_ERROR);
@@ -418,31 +458,32 @@ struct FP2d30Vec {
 };
 
 struct BMPFileHeader {
-  const int8_t magic_b = 'B';
-  const int8_t magic_m = 'M';
+  int8_t magic_b = 'B';
+  int8_t magic_m = 'M';
   uint32_t size = 0;
-  const int16_t reserved1 = 0;
-  const int16_t reserved2 = 0;
-  const uint32_t dataStart;
+  int16_t reserved1 = 0;
+  int16_t reserved2 = 0;
+  uint32_t dataStart;
 };
 
 static_assert(sizeof(BMPFileHeader) == 14);
 
 struct BMPInfoHeader {
-  const uint32_t size = sizeof(*this);
-  uint32_t width, height;
-  const uint16_t numMipmaps = 1;  // Bitmap still only supports one...
-  uint16_t bitsPerPixel = 32;
-  BitmapCompression compression = BitmapCompression::BITFIELDS;
+  uint32_t size = 0;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint16_t numMipmaps = 0;
+  uint16_t bitsPerPixel = 0;
+  BitmapCompression compression = BitmapCompression::RGB;
   uint32_t imageSize = 0;
-  uint32_t hPixelsPerMeter = 26;
-  uint32_t vPixelsPerMeter = 26;
+  uint32_t hPixelsPerMeter = 0;
+  uint32_t vPixelsPerMeter = 0;
   uint32_t colorUsed = 0;
   uint32_t colorImportant = 0;
-  uint32_t maskRed   = 0x000000FF;
-  uint32_t maskGreen = 0x0000FF00;
-  uint32_t maskBlue  = 0x00FF0000;
-  uint32_t maskAlpha = 0xFF000000;
+  uint32_t maskRed = 0;
+  uint32_t maskGreen = 0;
+  uint32_t maskBlue = 0;
+  uint32_t maskAlpha = 0;
   LogicalColorSpace colorSpace = LogicalColorSpace::sRGB;
   FP2d30Vec endpointRed = {};
   FP2d30Vec endpointGreen = {};
@@ -453,7 +494,7 @@ struct BMPInfoHeader {
   BitmapIntent intent = BitmapIntent::GRAPHICS;
   int32_t profileData = 0;
   int32_t profileSize = 0;
-  const int32_t reserved = 0;
+  int32_t reserved = 0;
 
   bool isRGBA() const {
     return  maskRed == 0xFF000000 && maskGreen == 0x00FF0000 &&
@@ -465,6 +506,9 @@ struct BMPInfoHeader {
   }
 };
 
+static_assert(sizeof(BMPInfoHeader) == 56,
+              "Unexpected BMP information header layout");
+
 #pragma pack(pop)
 }  // namespace
 
@@ -472,34 +516,56 @@ struct BMPInfoHeader {
 std::vector<RawImage> image_decode_bmp(const string& image_data) {
   std::vector<RawImage> imgs;
   
-  // Check file size against bitmap header size
-  if (image_data.length() < sizeof(BMPFileHeader)) {
-    fprintf(stderr, "Junk bitmap of size %lu", image_data.size());
+  if (image_data.size() <
+    sizeof(BMPFileHeader) + sizeof(BMPInfoHeader)) {
+    fprintf(stderr, "Truncated bitmap header\n");
+  return imgs;
+}
+
+  BMPFileHeader bmp_file{};
+  std::memcpy(&bmp_file, image_data.data(), sizeof(bmp_file));
+
+// Verify magic number, check header offset sanity.
+if (bmp_file.magic_b != 'B' || bmp_file.magic_m != 'M' ||
+      image_data.size() - sizeof(BMPFileHeader) < sizeof(BMPInfoHeader) ||
+      bmp_file.dataStart < sizeof(BMPFileHeader) + sizeof(BMPInfoHeader)) {
+  fprintf(stderr, "Junk bitmap of size %zu\n", image_data.size());
+  return imgs;
+}
+
+  BMPInfoHeader bmp_info{};
+  std::memcpy(
+      &bmp_info,
+      image_data.data() + sizeof(BMPFileHeader),
+      sizeof(bmp_info)
+  );
+  
+  if (bmp_info.size < sizeof(BMPInfoHeader) ||
+      bmp_info.size > bmp_file.dataStart - sizeof(BMPFileHeader)) {
+    fprintf(stderr, "Unsupported BMP information header size\n");
     return imgs;
-  }
-
-  const BMPFileHeader &bmp_file = *(BMPFileHeader*) image_data.data();
-
-  // Verify magic number, check header offset sanity.
-  if (bmp_file.magic_b != 'B' || bmp_file.magic_m != 'M' ||
-      bmp_file.dataStart > image_data.size() ||
-      sizeof(BMPInfoHeader) > image_data.size() - bmp_file.dataStart) {
-    fprintf(stderr, "Junk bitmap of size %lu", image_data.size());
-    return imgs;
-  }
-
-  const BMPInfoHeader &bmp_info =
-      *(BMPInfoHeader*) (image_data.data() + sizeof(BMPFileHeader));
-      
-  // BMP width and height are signed 32-bit values.
-  // Negative height indicates top-down bitmap orientation.
-  if (bmp_info.width == 0 ||
-      bmp_info.height == 0 ||
-      bmp_info.width > static_cast<uint32_t>(INT32_MAX) ||
-      bmp_info.height > static_cast<uint32_t>(INT32_MAX)) {
+  }      
+  // BMP dimensions are signed 32-bit values. 
+  int32_t signed_width = 0; 
+  int32_t signed_height = 0; 
+  std::memcpy(&signed_width, &bmp_info.width, sizeof(signed_width)); 
+  std::memcpy(&signed_height, &bmp_info.height, sizeof(signed_height)); 
+ 
+  if (signed_width <= 0 || 
+      signed_height == 0 || 
+      signed_height == INT32_MIN) { 
     fprintf(stderr, "Invalid BMP dimensions\n");
     return imgs;
   }
+ 
+  const uint32_t image_width = 
+      static_cast<uint32_t>(signed_width); 
+  const uint32_t image_height = static_cast<uint32_t>( 
+      signed_height < 0 
+          ? -static_cast<int64_t>(signed_height) 
+          : signed_height 
+  ); 
+  const bool top_down = signed_height < 0; 
      
   if(bmp_info.bitsPerPixel != 32 && bmp_info.bitsPerPixel != 24) {
     fprintf(stderr, "No support for %dbpp bitmaps\n", bmp_info.bitsPerPixel);
@@ -516,26 +582,25 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
   const uint64_t padded_row_bytes =
       (row_bytes + 3u) & ~uint64_t(3u);
   if (bmp_info.height != 0 &&
-      padded_row_bytes > UINT64_MAX / bmp_info.height) {
+      padded_row_bytes > UINT64_MAX / image_height) { 
     fprintf(stderr, "Invalid bitmap dimensions\n");
     return imgs;
   }      
   const uint64_t pixel_data_size =
-      padded_row_bytes * static_cast<uint64_t>(bmp_info.height);
+      padded_row_bytes * static_cast<uint64_t>(image_height); 
 
   if (bmp_file.dataStart > image_data.size() ||
       pixel_data_size > image_data.size() - bmp_file.dataStart) {
     fprintf(stderr, "Truncated bitmap data\n");
     return imgs;
   }
-  if (bmp_info.height != 0 &&
-      static_cast<uint64_t>(bmp_info.width) >
-          static_cast<uint64_t>(SIZE_MAX) / bmp_info.height / 4u) {
+  if (static_cast<uint64_t>(image_width) > 
+      static_cast<uint64_t>(SIZE_MAX) / image_height / 4u) { 
     fprintf(stderr, "Bitmap dimensions exceed addressable memory\n");
     return imgs;
   }
   const size_t output_size =
-      static_cast<size_t>(bmp_info.width) * bmp_info.height * 4u;
+      static_cast<size_t>(image_width) * image_height * 4u; 
   
   bool rgba = bmp_info.isRGBA();
   bool argb = bmp_info.isARGB();
@@ -550,8 +615,8 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
   
   unsigned char* bitmap;
   auto &img = imgs.emplace_back();
-  img.w = bmp_info.width;
-  img.h = bmp_info.height;
+  img.w = image_width; 
+  img.h = image_height; 
   img.pxdata = bitmap = new unsigned char[output_size](); // Initialize to 0.
 
   // Calculate the number of nulls that follows each line.
@@ -560,9 +625,12 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
   );
   const char *bmp_it = image_data.data() + bmp_file.dataStart;
 
-  for (unsigned ih = 0; ih < bmp_info.height; ih++) {
-    size_t tmp = static_cast<size_t>(bmp_info.height - 1 - ih) * bmp_info.width * 4u;
-    for (unsigned iw = 0; iw < bmp_info.width; iw++) {
+  for (uint32_t ih = 0; ih < image_height; ++ih) { 
+    const uint32_t destination_row = 
+        top_down ? ih : image_height - 1u - ih; 
+    size_t tmp = 
+        static_cast<size_t>(destination_row) * image_width * 4u; 
+    for (uint32_t iw = 0; iw < image_width; ++iw) { 
       if (bmp_info.bitsPerPixel == 24) {
         bitmap[tmp+0] = *bmp_it++;
         bitmap[tmp+1] = *bmp_it++;
@@ -591,6 +659,21 @@ std::vector<RawImage> image_decode_bmp(const string& image_data) {
 }
 
 int image_save_bmp(const std::filesystem::path& filename, const unsigned char* data, unsigned width, unsigned height, unsigned fullwidth, unsigned fullheight, bool flipped) {
+  const uint64_t output_size =
+      static_cast<uint64_t>(width) * height * 4u;
+  const uint64_t source_size =
+      static_cast<uint64_t>(fullwidth) * height * 4u;
+
+  if (width == 0 || height == 0 ||
+      fullwidth < width || fullheight < height ||
+      data == nullptr ||
+      output_size > UINT32_MAX - 122u ||
+      source_size > UINT_MAX ||
+      static_cast<uint64_t>(width) * 4u > UINT_MAX ||
+      static_cast<uint64_t>(fullwidth) * 4u > UINT_MAX) {
+    return -1;
+  }
+
   unsigned sz = width * height;
   FILE_t *bmp = fopen_wrapper(filename.u8string().c_str(), "wb");
   if (!bmp) return -1;
