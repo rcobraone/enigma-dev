@@ -221,13 +221,8 @@ bool object_is_ancestor(int objid, int acid)
          enigma::objectdata[objid] != nullptr &&
          steps < enigma::object_idmax)
   {
-    if (enigma::objectdata[objid] == nullptr)
-      return false;
-
-   {
     if (objid == acid)
       return true;
-        +
 
     const int parent = enigma::objectdata[objid]->parent;
 
