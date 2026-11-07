@@ -403,40 +403,37 @@ time_t date_inc_second(time_t date,int amount)
 
 bool date_valid_datetime(int year,int month,int day,int hour,int minute,int second)
 {
-    if (hour>=0 && hour<24 && minute>=0 && minute<60 && second>=0 && second<60)
-        return true;
-    else
-        return false;
-    if (month>0 && month<=12){
+ if (hour < 0 || hour >= 24 ||
+     minute < 0 || minute >= 60 ||
+     second < 0 || second >= 60)
+ return false;
+
+ if (month > 0 && month <= 12) {
         int daycount;
         int DaysPerMonth1[] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
         int DaysPerMonth2[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-        if ((year+1900)%400 == 0 || ((year+1900)%100 != 0 && (year+1900)%4 == 0))
+        if (year % 400 == 0 || (year % 100 != 0 && year % 4 == 0))
             daycount = DaysPerMonth1[month-1];
         else
             daycount = DaysPerMonth2[month-1];
         if (day>0 && day<=daycount)
             return true;
-        else
-            return false;
     }
     return false;
 }
 
 bool date_valid_date(int year,int month,int day)
 {
-    if (month>0 && month<=12){
+    if (month > 0 && month <= 12) {
         int daycount;
         int DaysPerMonth1[] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
         int DaysPerMonth2[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-        if ((year+1900)%400 == 0 || ((year+1900)%100 != 0 && (year+1900)%4 == 0))
+        if (year % 400 == 0 || (year % 100 != 0 && year % 4 == 0))
             daycount = DaysPerMonth1[month-1];
         else
             daycount = DaysPerMonth2[month-1];
         if (day>0 && day<=daycount)
             return true;
-        else
-            return false;
     }
     return false;
 }
@@ -451,29 +448,33 @@ bool date_valid_time(int hour,int minute,int second)
 
 string date_datetime_string(time_t date)
 {
-    char buffer[80];
-    strftime(buffer,80,"%x %X",localtime(&date));
+ char buffer[80] = {};
+ if (strftime(buffer, sizeof(buffer), "%x %X", localtime(&date)) == 0)
+   return string();
     return string(buffer);
 }
 
 string date_date_string(time_t date)
 {
-    char buffer[80];
-    strftime(buffer,80,"%x",localtime(&date));
+ char buffer[80] = {};
+ if (strftime(buffer, sizeof(buffer), "%x", localtime(&date)) == 0)
+   return string();
     return string(buffer);
 }
 
 string date_time_string(time_t date)
 {
-    char buffer[80];
-    strftime(buffer,80,"%X",localtime(&date));
+ char buffer[80] = {};
+ if (strftime(buffer, sizeof(buffer), "%X", localtime(&date)) == 0)
+   return string();
     return string(buffer);
 }
 
 string date_datetime_stringf(time_t date,string format)
 {
-    char buffer[80];
-    strftime(buffer,80,format.c_str(),localtime(&date));
+ char buffer[80] = {};
+ if (strftime(buffer, sizeof(buffer), format.c_str(), localtime(&date)) == 0)
+   return string();
     return string(buffer);
 }
 }
