@@ -58,6 +58,9 @@ std::string CurrRoot = TranslateRoot(0, "UNKNOWN");
 void open_ini() {
   if (regOpen) { return; }
   std::ifstream infile(RegistryFilename.c_str());
+  if (!infile)
+    return;
+
   regIni.load(infile, ';');
   regOpen = true;
 }
