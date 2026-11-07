@@ -23,16 +23,35 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <stdexcept>
+#include <type_traits>
+#include <functional>
+#include <utility>
 
-#ifdef JUST_DEFINE_IT_RUN
-#  include <stdint.h>
-#  define constexpr const
-#  define decltype(x) double
-#  define rvalue_ref &
-#else
-#  include <cstdint>
-#  include <type_traits>
-#  define rvalue_ref &&
+#ifndef JUST_DEFINE_IT_RUN
+  template<typename T>
+  static T checked_numeric_cast(double value) {
+    if constexpr (std::is_integral<T>::value) {
+      if (!std::isfinite(value))
+        throw std::range_error("variant numeric conversion out of range");
+
+      const long double truncated =
+          std::trunc(static_cast<long double>(value));
+
+      const long double limit =
+          std::ldexp(1.0L, std::numeric_limits<T>::digits);
+
+      if constexpr (std::is_signed<T>::value) {
+        if (truncated < -limit || truncated >= limit)
+          throw std::range_error("variant numeric conversion out of range");
+      } else {
+        if (truncated < 0.0L || truncated >= limit)
+          throw std::range_error("variant numeric conversion out of range");
+      }
+    }
+
+    return static_cast<T>(value);
+  }
 #endif
 
 namespace enigma {
@@ -293,11 +312,83 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   static constexpr int ty_real   = enigma_user::ty_real;
   static constexpr int ty_string = enigma_user::ty_string;
 
-  // Real-valued casts.
-  template<typename T, REQUIRE_NON_STRING_NUMBER(T)>
-  operator T() const {
-    return (T) rval.d;
+  static long double checked_numeric_value(double value) {
+    return static_cast<long double>(value);
   }
+
+  static long double checked_numeric_value(const variant& value) {
+    if (value.type != ty_real)
+      throw std::domain_error(
+          "bitwise operation requires numeric variant");
+    return static_cast<long double>(value.rval.d);
+  }
+
+  template<typename T>
+  static long double checked_numeric_value(T value) {
+    return static_cast<long double>(value);
+  }
+
+  static long long checked_integer_conversion(long double value) {
+    constexpr long double limit = 9223372036854775808.0L;
+
+  static long long checked_integer_conversion(double value) {
+    constexpr double limit = 9223372036854775808.0;
+
+    if (!std::isfinite(value) ||
+        value < -limit ||
+        value >= limit) {
+      throw std::range_error(
+          "variant integer conversion out of range");
+    }
+
+    return static_cast<long long>(value);
+  }
+
+  static int checked_shift_count(long double value) {
+    if (!std::isfinite(value) || value < 0.0L || value >= 64.0L)
+      return -1;
+    return static_cast<int>(value);
+  }
+ 
+  void require_real_type(const char* operation) const {
+    if (type != ty_real) {
+      throw std::domain_error(operation);
+    }
+  }
+
+  template<typename T>
+  static T checked_numeric_cast(double value) {
+    if constexpr (std::is_integral<T>::value) {
+      if (!std::isfinite(value))
+        throw std::range_error("variant numeric conversion out of range");
+
+      const long double truncated =
+          std::trunc(static_cast<long double>(value));
+
+      const long double limit =
+          std::ldexp(1.0L, std::numeric_limits<T>::digits);
+
+      if constexpr (std::is_signed<T>::value) {
+        if (truncated < -limit || truncated >= limit)
+          throw std::range_error("variant numeric conversion out of range");
+      } else {
+        if (truncated < 0.0L || truncated >= limit)
+          throw std::range_error("variant numeric conversion out of range");
+      }
+    }
+
+    return static_cast<T>(value);
+  }
+
+  // Real-valued casts.
+ template<typename T, REQUIRE_NON_STRING_NUMBER(T)>
+ operator T() const {
+ #ifdef JUST_DEFINE_IT_RUN
+   return (T) rval.d;
+ #else
+   return checked_numeric_cast<T>(rval.d);
+ #endif
+ }
 
   size_t string_length()   const { return sval().length(); }
   char char_at(size_t ind) const {
@@ -324,24 +415,50 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   explicit operator char() const {
     if (type == ty_string)
       return sval().empty() ? '\0' : sval()[0];
+      
     if (type == enigma_user::ty_pointer)
-      return rval.p ? 1 : 0;    
-    return (char) rval.d;
+      return rval.p ? 1 : 0;
+          
+  if (!std::isfinite(rval.d))
+    throw std::range_error("variant char conversion out of range");
+
+  const long double value =
+      std::trunc(static_cast<long double>(rval.d));
+
+  if (value < static_cast<long double>(
+                  std::numeric_limits<char>::lowest()) ||
+      value > static_cast<long double>(
+                  std::numeric_limits<char>::max()))
+    throw std::range_error("variant char conversion out of range");
+
+   return static_cast<char>(rval.d);
   }
 
   // How to construct a variant: the basics
+ private:
+  static const char* safe_c_string(const char* str) {
+    return str ? str : "";
+  }
+
+  static enigma::variant_real_union copy_real_union(
+      const variant& source) {
+    if (source.type == enigma_user::ty_pointer)
+      return enigma::variant_real_union(source.rval.p);
+
+    return enigma::variant_real_union(source.rval.d);
+  }
+
+ public:  
   variant():
       enigma::variant_real_union(0.0), type(default_type) {}
   variant(const void *p):
       enigma::variant_real_union(p), type(enigma_user::ty_pointer) {}
   variant(const variant &x):
-      enigma::variant_real_union(
-          x.type == enigma_user::ty_pointer ? x.rval.p : x.rval.d),     
+      enigma::variant_real_union(copy_real_union(x)),   
       enigma::variant_string_wrapper(x.sval()),
       type(x.type) {}
   variant(variant rvalue_ref x):
-      enigma::variant_real_union(
-          x.type == enigma_user::ty_pointer ? x.rval.p : x.rval.d),
+      enigma::variant_real_union(copy_real_union(x)),
       enigma::variant_string_wrapper(x.release_sval()),
       type(x.type) {}
 
@@ -351,7 +468,7 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
 
   variant(const char *str):
       enigma::variant_real_union(0.),
-      enigma::variant_string_wrapper(str),
+      enigma::variant_string_wrapper(safe_c_string(str)),
       type(ty_string) {}
   variant(const std::string &str):
       enigma::variant_real_union(0.),
@@ -366,8 +483,19 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   // ===========================================================================
 
   variant& operator=(const variant &v) {
+    if (this == &v)
+      return *this;
+
+    // Prepare the potentially allocating operation before
+    // modifying the destination object.
+    if (v.type == ty_string) {
+      std::string copied(v.sval());
+      sval() = std::move(copied);
+    }
+	  
     rval = v.rval;
-    if ((type = v.type) == ty_string) sval() = v.sval();
+    type = v.type;
+
     return *this;
   }
 
@@ -392,7 +520,7 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   }
 
   variant& operator=(const char *str) {
-    sval() = str;
+    sval() = safe_c_string(str);
     type = ty_string;
     return *this;
   }
@@ -471,7 +599,7 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
     return rval.d - epsilon <= x && rval.d + epsilon >= x;
   }
   template<typename T> bool epsilon_neq(T x) const {
-    return rval.d + epsilon < x || rval.d - epsilon > x;
+    return !epsilon_eq(x);
   }
   template<typename T> bool epsilon_leq(T x) const {
     return rval.d - epsilon <= x;
@@ -494,11 +622,15 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   VAROP operator==(const T &x) const {
     if (type != x.type) return false;
     if (type == ty_string) return sval() == x.sval();
+    if (type == enigma_user::ty_pointer)
+      return rval.p == x.rval.p;
     return epsilon_eq(x.rval.d);
   }
   VAROP operator!=(const T &x) const {
     if (type != x.type) return true;
     if (type == ty_string) return sval() != x.sval();
+    if (type == enigma_user::ty_pointer)
+      return rval.p != x.rval.p;    
     return epsilon_neq(x.rval.d);
   }
   VAROP operator<=(const T &x) const {
@@ -506,6 +638,11 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
       if (x.type != ty_string) return false;  // As a string, we are larger.
       return sval() <= x.sval();
     }
+    if (type == enigma_user::ty_pointer) {
+      if (x.type != enigma_user::ty_pointer) return false;
+      return !std::less<const void*>()(x.rval.p, rval.p);
+    }
+    if (x.type == enigma_user::ty_pointer) return false;
     return epsilon_leq(x.rval.d);
   }
   VAROP operator>=(const T &x) const {
@@ -513,6 +650,10 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
       if (x.type != ty_string) return true;  // As a string, we are larger.
       return sval() >= x.sval();
     }
+    if (type == enigma_user::ty_pointer) {
+      return !std::less<const void*>()(rval.p, x.rval.p);
+    }
+    if (x.type == enigma_user::ty_pointer) return false;   
     return epsilon_geq(x.rval.d);
   }
   VAROP operator<(const T &x) const {
@@ -520,6 +661,11 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
       if (x.type != ty_string) return false;  // As a string, we are larger.
       return sval() < x.sval();
     }
+    if (type == enigma_user::ty_pointer) {
+      if (x.type != enigma_user::ty_pointer) return false;
+      return std::less<const void*>()(rval.p, x.rval.p);
+    }
+    if (x.type == enigma_user::ty_pointer) return false;
     return epsilon_lt(x.rval.d);
   }
   VAROP operator>(const T &x) const {
@@ -527,6 +673,11 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
       if (x.type != ty_string) return true;  // As a string, we are larger.
       return sval() > x.sval();
     }
+    if (type == enigma_user::ty_pointer) {
+      if (x.type != enigma_user::ty_pointer) return false;
+      return std::less<const void*>()(x.rval.p, rval.p);
+    }
+    if (x.type == enigma_user::ty_pointer) return false;   
     return epsilon_gt(x.rval.d);
   }
 #undef VAROP
@@ -578,56 +729,106 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
 
   template<typename T>
   decltype(0LL << (int)*(T*)nullptr) operator<<(T x) const {
-    const double shift_value = static_cast<double>(x);
-    if (!std::isfinite(shift_value) ||
-        shift_value < 0.0 || shift_value >= 64.0)
+    const long long value =
+        checked_integer_conversion(checked_numeric_value(*this));
+    const int shift =
+        checked_shift_count(checked_numeric_value(x));
+    if (shift < 0)
       return 0;
-    const int shift = static_cast<int>(shift_value);
-    return (long long) rval.d << shift;
+
+    if (value < 0)
+      throw std::range_error("negative value in variant left shift");
+
+    if (value > (std::numeric_limits<long long>::max() >> shift))
+      throw std::range_error("variant left shift overflow");
+
+    return value << shift;
   }
   template<typename T>
   decltype(0LL >> (int)*(T*)nullptr) operator>>(T x) const {
-    const double shift_value = static_cast<double>(x);
-    if (!std::isfinite(shift_value) ||
-        shift_value < 0.0 || shift_value >= 64.0)
+    const long long value =
+        checked_integer_conversion(checked_numeric_value(*this));
+    const int shift =
+        checked_shift_count(checked_numeric_value(x));
+    if (shift < 0)
       return 0;
-    const int shift = static_cast<int>(shift_value);
-    return (long long) rval.d >> shift;
+
+    if (shift == 0)
+      return value;
+    if (value >= 0)
+      return value >> shift;
+
+    return -1LL - ((-(value + 1LL)) >> shift);
   }
   template<typename T>
   decltype(0LL & (long long)*(T*)nullptr) operator&(T x) const {
-    return (long long) rval.d & (long long) x;
+    return checked_integer_conversion(checked_numeric_value(*this)) &
+           checked_integer_conversion(checked_numeric_value(x));
   }
   template<typename T>
   decltype(0LL | (long long)*(T*)nullptr) operator|(T x) const {
-    return (long long) rval.d | (long long) x;
+    return checked_integer_conversion(checked_numeric_value(*this)) |
+           checked_integer_conversion(checked_numeric_value(x));
   }
   template<typename T>
   decltype(0LL | (long long)*(T*)nullptr) operator^(T x) const {
-    return (long long) rval.d ^ (long long) x;
+    return checked_integer_conversion(checked_numeric_value(*this)) |
+           checked_integer_conversion(checked_numeric_value(x));
   }
 
   // Miscellanea
   // ===========================================================================
 
   // Array accessors.
-  char &operator[](int ind)       { return sval()[ind]; }
-  char  operator[](int ind) const { return sval()[ind]; }
+ char &operator[](int ind) {
+  if (ind < 0)
+    throw std::out_of_range("variant string index out of range");
+    
+  return sval().at(static_cast<size_t>(ind));
+}
+
+char operator[](int ind) const {
+  if (ind < 0)
+    throw std::out_of_range("variant string index out of range");
+    
+  return sval().at(static_cast<size_t>(ind));
+}
 
   // Increment operators.
-  variant&  operator++()    { return ++rval.d, *this; }
-  double    operator++(int) { return rval.d++; }
-  variant&  operator--()    { return --rval.d, *this; }
-  double    operator--(int) { return rval.d--; }
+  variant& operator++() {
+    require_real_type("variant increment requires real value");
+    ++rval.d;
+    return *this;
+  }
+  double operator++(int) {
+    require_real_type("variant increment requires real value");
+    return rval.d++;
+  }
+  variant& operator--() {
+    require_real_type("variant decrement requires real value");
+    --rval.d;
+    return *this;
+  }
+  double operator--(int) {
+    require_real_type("variant decrement requires real value");
+    return rval.d--;
+  }
   variant&  operator*()     { return *this; }
 
   // Other unary operators.
   bool   operator!() const { return !bool(*this); }
   long long operator~() const {
-    return ~(long long) rval.d;
+    require_real_type("variant bitwise NOT requires real value");
+    return ~checked_integer_conversion(rval.d);
   }
-  double operator-() const { return -rval.d; }
-  double operator+() const { return  rval.d; }
+  double operator-() const {
+    require_real_type("variant unary minus requires real value");
+    return -rval.d;
+  }
+  double operator+() const {
+    require_real_type("variant unary plus requires real value");
+    return rval.d;
+  }
 
   ~variant() {}
 };
