@@ -65,9 +65,10 @@ namespace enigma
   void depthv::remove() {
     if (!myiter)
       return;
-    if (!myiter->inst)
+    if (!myiter->inst) {
+      myiter = nullptr;
       return;
-
+}
     std::map<int,std::pair<double,double> >::iterator it = id_to_currentnextdepth.find(myiter->inst->id);
     if (it == id_to_currentnextdepth.end()) { // Local value is valid, use it.
       drawing_depths[rval.d].draw_events->unlink(myiter);
