@@ -44,36 +44,61 @@ using std::string;
 using std::vector;
 
 tstring widen(const string &str) {
-  if (str.empty()) return L"";
-  // Number of shorts will be <= number of bytes; add one for null terminator
-  size_t wchar_count = str.size() + 1;
-  if (wchar_count > static_cast<size_t>(INT_MAX))
-  return L"";
-  vector<wchar_t> buf(wchar_count);
-  wchar_count = static_cast<size_t>(
-      MultiByteToWideChar(
-          CP_UTF8,
-          0,
-          str.c_str(),
-          -1,
-          buf.data(),
-          static_cast<int>(buf.size())
-      )
-  );
-  if (!wchar_count) return L"";
-  return tstring{buf.data(), wchar_count - 1};
+  if (str.empty())
+    return L"";
+
+  if (str.size() > static_cast<size_t>(INT_MAX))
+    return L"";
+
+  const int input_size = static_cast<int>(str.size());
+
+  const int required = MultiByteToWideChar(
+      CP_UTF8, MB_ERR_INVALID_CHARS,
+      str.data(), input_size, nullptr, 0);
+
+  if (required <= 0)
+    return L"";
+
+  vector<wchar_t> buf(static_cast<size_t>(required));
+
+  const int converted = MultiByteToWideChar(
+      CP_UTF8, MB_ERR_INVALID_CHARS,
+      str.data(), input_size, buf.data(), required);
+
+  if (converted != required)
+    return L"";
+
+  return tstring(buf.data(), static_cast<size_t>(converted));
 }
 
 string shorten(tstring str) {
-  if (str.empty()) return "";
-  if (str.length() > static_cast<size_t>(INT_MAX))
-  return "";
-  int nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), nullptr, 0, nullptr, nullptr);
-  if (!nbytes) return "";
-  vector<char> buf((size_t)nbytes);
-  nbytes = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.length(), buf.data(), nbytes, nullptr, nullptr);
-  if (!nbytes) return "";
-  return string{buf.data(), (size_t)nbytes};
+  if (str.empty())
+    return "";
+
+  if (str.size() > static_cast<size_t>(INT_MAX))
+    return "";
+
+  const int input_size = static_cast<int>(str.size());
+
+  const int required = WideCharToMultiByte(
+      CP_UTF8, WC_ERR_INVALID_CHARS,
+      str.data(), input_size,
+      nullptr, 0, nullptr, nullptr);
+
+  if (required <= 0)
+    return "";
+
+  vector<char> buf(static_cast<size_t>(required));
+
+  const int converted = WideCharToMultiByte(
+      CP_UTF8, WC_ERR_INVALID_CHARS,
+      str.data(), input_size,
+      buf.data(), required, nullptr, nullptr);
+
+  if (converted != required)
+    return "";
+
+  return string(buf.data(), static_cast<size_t>(converted));
 }
 
 #endif
@@ -97,96 +122,103 @@ static const std::string base64_chars =
 namespace enigma_user {
 
 bool is_base64(unsigned char c) {
-  return std::isalnum(static_cast<unsigned char>(c)) ||
+  return (c >= 'A' && c <= 'Z') ||
+         (c >= 'a' && c <= 'z') ||
+         (c >= '0' && c <= '9') ||
          c == '+' ||
          c == '/';
 }
 
 string base64_encode(string const& str) {
-  size_t in_len = str.size();
-  string ret;
-  ret.reserve(((in_len + 2) / 3) * 4);
-  int i = 0;
-  int j = 0;
-  int in_ = 0;
-  unsigned char char_array_3[3];
-  unsigned char char_array_4[4];
+  const size_t groups = str.size() / 3;
+  const size_t remainder = str.size() % 3;
 
-  while (in_len--) {
-    char_array_3[i++] = str[in_]; in_++;
-    if (i == 3) {
-      char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-      char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-      char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-      char_array_4[3] = char_array_3[2] & 0x3f;
+  if (groups > (ret.max_size() - (remainder ? 4 : 0)) / 4)
+    return "";
 
-      for(i = 0; (i <4) ; i++)
-        ret += base64_chars[char_array_4[i]];
+  ret.reserve(groups * 4 + (remainder ? 4 : 0));
 
-      i = 0;
-    }
+  size_t i = 0;
+  while (i + 3 <= str.size()) {
+    const unsigned char a = static_cast<unsigned char>(str[i]);
+    const unsigned char b = static_cast<unsigned char>(str[i + 1]);
+    const unsigned char c = static_cast<unsigned char>(str[i + 2]);
+
+    ret += base64_chars[a >> 2];
+    ret += base64_chars[((a & 0x03) << 4) | (b >> 4)];
+    ret += base64_chars[((b & 0x0f) << 2) | (c >> 6)];
+    ret += base64_chars[c & 0x3f];
+    i += 3;
   }
 
-  if (i) {
-    for(j = i; j < 3; j++)
-      char_array_3[j] = '\0';
-
-    char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-    char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-    char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-    char_array_4[3] = char_array_3[2] & 0x3f;
-
-    for (j = 0; (j < i + 1); j++)
-      ret += base64_chars[char_array_4[j]];
-
-    while (i++ < 3)
-      ret += '=';
+  if (remainder == 1) {
+    const unsigned char a = static_cast<unsigned char>(str[i]);
+    ret += base64_chars[a >> 2];
+    ret += base64_chars[(a & 0x03) << 4];
+    ret += "==";
+  } else if (remainder == 2) {
+    const unsigned char a = static_cast<unsigned char>(str[i]);
+    const unsigned char b = static_cast<unsigned char>(str[i + 1]);
+    ret += base64_chars[a >> 2];
+    ret += base64_chars[((a & 0x03) << 4) | (b >> 4)];
+    ret += base64_chars[(b & 0x0f) << 2];
+    ret += '=';
   }
-
   return ret;
-
 }
 
 string base64_decode(string const& str) {
-  size_t in_len = str.size();
-  int i = 0;
-  int j = 0;
-  int in_ = 0;
-  unsigned char char_array_4[4], char_array_3[3];
-  string ret;
-  ret.reserve((in_len / 4) * 3);
+  if (str.empty())
+    return ret;
 
-  while (in_len-- && ( str[in_] != '=') && is_base64(str[in_])) {
-    char_array_4[i++] = str[in_]; in_++;
-    if (i ==4) {
-      for (i = 0; i <4; i++)
-        char_array_4[i] = base64_chars.find(char_array_4[i]);
+  if (str.size() % 4 != 0)
+    return "";
 
-      char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
-      char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
-      char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+  const size_t groups = str.size() / 4;
+  if (groups > ret.max_size() / 3)
+    return "";
 
-      for (i = 0; (i < 3); i++)
-        ret += char_array_3[i];
+  ret.reserve(groups * 3);
 
-      i = 0;
-    }
+  for (size_t i = 0; i < str.size(); i += 4) {
+    const bool last = (i + 4 == str.size());
+    const bool pad2 = str[i + 2] == '=';
+    const bool pad1 = str[i + 3] == '=';
+
+    if (str[i] == '=' || str[i + 1] == '=')
+      return "";
+
+    if ((pad2 && !pad1) || ((pad1 || pad2) && !last))
+      return "";
+
+    const size_t a = base64_chars.find(str[i]);
+    const size_t b = base64_chars.find(str[i + 1]);
+    const size_t c = pad2 ? 0 : base64_chars.find(str[i + 2]);
+    const size_t d = pad1 ? 0 : base64_chars.find(str[i + 3]);
+
+    if (a == string::npos || b == string::npos ||
+        (!pad2 && c == string::npos) ||
+        (!pad1 && d == string::npos))
+      return "";
+
+    if ((pad2 && (b & 0x0f) != 0) ||
+        (pad1 && !pad2 && (c & 0x03) != 0))
+      return "";
+
+    const unsigned int value =
+        (static_cast<unsigned int>(a) << 18) |
+        (static_cast<unsigned int>(b) << 12) |
+        (static_cast<unsigned int>(c) << 6) |
+        static_cast<unsigned int>(d);
+
+    ret += static_cast<char>((value >> 16) & 0xff);
+
+    if (!pad2)
+      ret += static_cast<char>((value >> 8) & 0xff);
+
+    if (!pad1)
+      ret += static_cast<char>(value & 0xff);
   }
-
-  if (i) {
-    for (j = i; j <4; j++)
-      char_array_4[j] = 0;
-
-    for (j = 0; j <4; j++)
-      char_array_4[j] = base64_chars.find(char_array_4[j]);
-
-    char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
-    char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
-    char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
-
-    for (j = 0; (j < i - 1); j++) ret += char_array_3[j];
-  }
-
   return ret;
 }
 
@@ -194,25 +226,119 @@ double real(variant str) { return str.type ? atof(((string)str).c_str()) : (doub
 
 string ansi_char(char byte) { return string(1,byte); }
 string chr(char val) { return string(1,val); }
-int ord(string str)  { return str.empty() ? 0 : str[0]; }
+int ord(string str) {
+  return str.empty() ? 0 : static_cast<unsigned char>(str[0]);
+}
 
 size_t string_length(string str) { return str.length(); }
-size_t string_length(const char* str) { return strlen(str); }
+size_t string_length(const char* str) {
+  return str ? strlen(str) : 0;
+}
+
+static bool count_utf8_codepoints(
+    const char* data,
+    size_t length,
+    size_t& result
+) {
+  result = 0;
+  size_t i = 0;
+
+  while (i < length) {
+    const unsigned char c =
+        static_cast<unsigned char>(data[i]);
+
+    if (c <= 0x7F) {
+      ++i;
+    } else if (c >= 0xC2 && c <= 0xDF) {
+      if (length - i < 2)
+        return false;
+
+      const unsigned char c1 =
+          static_cast<unsigned char>(data[i + 1]);
+
+      if (c1 < 0x80 || c1 > 0xBF)
+        return false;
+
+      i += 2;
+    } else if (c >= 0xE0 && c <= 0xEF) {
+      if (length - i < 3)
+        return false;
+
+      const unsigned char c1 =
+          static_cast<unsigned char>(data[i + 1]);
+      const unsigned char c2 =
+          static_cast<unsigned char>(data[i + 2]);
+
+      if (c2 < 0x80 || c2 > 0xBF)
+        return false;
+
+      if (c == 0xE0) {
+        if (c1 < 0xA0 || c1 > 0xBF)
+          return false;
+      } else if (c == 0xED) {
+        if (c1 < 0x80 || c1 > 0x9F)
+          return false;
+      } else if (c1 < 0x80 || c1 > 0xBF) {
+        return false;
+      }
+
+      i += 3;
+    } else if (c >= 0xF0 && c <= 0xF4) {
+      if (length - i < 4)
+        return false;
+
+      const unsigned char c1 =
+          static_cast<unsigned char>(data[i + 1]);
+      const unsigned char c2 =
+          static_cast<unsigned char>(data[i + 2]);
+      const unsigned char c3 =
+          static_cast<unsigned char>(data[i + 3]);
+
+      if (c2 < 0x80 || c2 > 0xBF ||
+          c3 < 0x80 || c3 > 0xBF)
+        return false;
+
+      if (c == 0xF0) {
+        if (c1 < 0x90 || c1 > 0xBF)
+          return false;
+      } else if (c == 0xF4) {
+        if (c1 < 0x80 || c1 > 0x8F)
+          return false;
+      } else if (c1 < 0x80 || c1 > 0xBF) {
+        return false;
+      }
+
+      i += 4;
+    } else {
+      return false;
+    }
+
+    ++result;
+  }
+
+  return true;
+}
 
 size_t string_length_utf8(string str) {
-  size_t res = 0;
-  for (size_t i = 0; i < str.length(); ++i)
-    if ((str[i] & 0xC0) != 0x80)
-      ++res;
-  return res;
+  if (!str)
+    return 0;
+    
+  size_t result = 0;
+  if (!count_utf8_codepoints(str.data(), str.size(), result))
+    return 0;
+  return result;
 }
 
 size_t string_length_utf8(const char* str) {
-  size_t res = 0;
-  for (size_t i = 0; str[i]; ++i)
-    if ((str[i] & 0xC0) != 0x80)
-      ++res;
-  return res;
+  if (!str)
+    return 0;
+  if (str == nullptr)
+    return 0;
+
+  size_t result = 0;
+  if (!count_utf8_codepoints(str, strlen(str), result))
+    return 0;
+  return result;
 }
 
 size_t string_pos(string substr,string str) {
@@ -223,33 +349,32 @@ size_t string_pos(string substr,string str) {
 }
 
 string string_format(double val, unsigned tot, unsigned dec) {
-  const int width = tot > static_cast<unsigned>(INT_MAX)
+  // Prevent excessive allocations caused by untrusted formatting arguments.
+  constexpr size_t max_output_size = 1024 * 1024;
 
-                       ? INT_MAX
-
-                        : static_cast<int>(tot);
-
-  const int precision = dec > static_cast<unsigned>(INT_MAX)
-
-                          ? INT_MAX
-
-                          : static_cast<int>(dec);
-
-  const int needed = std::snprintf(nullptr, 0, "%0*.*f",
-
-                                    width, precision, val);
-
-  if (needed < 0)
-
+  if (tot > max_output_size || dec > max_output_size)
     return "";
 
-  std::vector<char> sbuf(static_cast<size_t>(needed) + 1);
+  const int width = static_cast<int>(tot);
+  const int precision = static_cast<int>(dec);
 
-  std::snprintf(sbuf.data(), sbuf.size(), "%0*.*f",
+  const int needed = std::snprintf(
+      nullptr, 0, "%0*.*f", width, precision, val);
 
-                width, precision, val);
+  if (needed < 0)
+    return "";
 
-  return std::string(sbuf.data(), static_cast<size_t>(needed));
+  const size_t output_size = static_cast<size_t>(needed);
+  if (output_size > max_output_size)
+    return "";
+  std::vector<char> buffer(output_size + 1);
+  const int written = std::snprintf(
+      buffer.data(), buffer.size(), "%0*.*f", width, precision, val);
+
+  if (written < 0 || written != needed)
+    return "";
+
+  return string(buffer.data(), output_size);
 }
 
 string string_copy(string str, int index, int count) {
@@ -258,16 +383,27 @@ string string_copy(string str, int index, int count) {
 }
 
 string string_set_byte_at(string str, int index, char byte) {
-  if (index<=1) return str + byte;
-  const size_t x = index-1;
-  return x>str.length()? str + byte: str.replace(x, 1, 1, byte);
+  if (index < 1)
+    return str;
+
+  const size_t pos = static_cast<size_t>(index - 1);
+
+  if (pos >= str.size())
+    return str;
+
+  str[pos] = byte;
+  return str;
 }
 
 char string_byte_at(string str, int index) {
-  unsigned int n = index <= 1 ? 0 : (unsigned int)(index - 1);
-  if (n >= str.length())
+if (index < 1)
     return 0;
-  return str[n];
+  const size_t pos = static_cast<size_t>(index - 1);
+
+  if (pos >= str.size())
+    return 0;
+
+  return str[pos];
 }
 
 string string_char_at(string str,int index) {
@@ -278,24 +414,50 @@ string string_char_at(string str,int index) {
 }
 
 string string_delete(string str,int index,int count) {
-  const size_t pos = index < 2 ? 0 : static_cast<size_t>(index - 1);
-  if (pos > str.length())
+  if (index < 1 || count < 1)
     return str;
-  return str.erase(pos, count < 1 ? 0 : static_cast<size_t>(count));
+
+  const size_t pos = static_cast<size_t>(index - 1);
+
+  if (pos >= str.size())
+    return str;
+
+  const size_t length = static_cast<size_t>(count);
+
+  str.erase(pos, length);
+  return str;
 }
 
 string string_insert(string substr,string str,int index) {
-  if (index<=1) return substr + str;
-  const size_t x = index-1;
-  return x>str.length()? str + substr: str.insert(x, substr);
+  if (index <= 1)
+    return substr + str;
+
+  const size_t pos = static_cast<size_t>(index - 1);
+
+  if (pos > str.size())
+    return str + substr;
+
+  str.insert(pos, substr);
+  return str;
 }
 
 string string_replace(string str,string substr,string newstr) {
-  size_t pos=str.find(substr,0);
-  return pos==(size_t)-1?str:str.replace(pos,substr.length(),newstr);
+  if (substr.empty())
+    return str;
+
+  const size_t pos = str.find(substr);
+
+  if (pos == string::npos)
+    return str;
+
+  str.replace(pos, substr.size(), newstr);
+  return str;
 }
 
 string string_replace_all(string str,string substr,string newstr) {
+  if (substr.empty())
+    return str;
+
   return ::string_replace_all(str, substr, newstr);
 }
 
@@ -330,10 +492,16 @@ string string_repeat(string str,int count) {
    return "";
   string ret;
   const size_t repetitions = static_cast<size_t>(count);
+  
   if (str.length() > ret.max_size() / repetitions)
     return "";
-  ret.reserve(str.length() * repetitions);
-  for(int i = count; i; i--) ret.append(str);
+
+  const size_t total_size = str.length() * repetitions;
+  ret.reserve(total_size);
+
+  for (size_t i = 0; i < repetitions; ++i)
+    ret.append(str);
+
   return ret;
 }
 
@@ -395,8 +563,7 @@ string filename_path(string fname)
 
 string filename_dir(string fname)
 {
-  size_t fp = fname.find_last_of("/\\");
-  if (fp == string::npos)
++  if (fname.size() < 2)
     return "";
   return fname.substr(0, fp);
 }
@@ -406,7 +573,16 @@ string filename_drive(string fname)
   size_t fp = fname.find_first_of("/\\");
   if (!fp || fp == string::npos || fname[fp-1] != ':')
     return "";
-  return fname.substr(0, fp);
+
+  const unsigned char drive =
+      static_cast<unsigned char>(fname[0]);
+
+  if (!((drive >= 'A' && drive <= 'Z') ||
+        (drive >= 'a' && drive <= 'z')) ||
+      fname[1] != ':')
+    return "";
+
+  return fname.substr(0, 2);
 }
 
 string filename_ext(string fname)
