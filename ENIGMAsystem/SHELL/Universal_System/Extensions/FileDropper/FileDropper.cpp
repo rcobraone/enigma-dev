@@ -60,19 +60,26 @@ using enigma_user::file_exists;
 using enigma_user::directory_exists;
 
 void UnInstallHook(HHOOK Hook) {
-  UnhookWindowsHookEx(Hook);
+  if (Hook != NULL) {
+    UnhookWindowsHookEx(Hook);
+    hook = NULL;
+  }
 }
 
 LRESULT CALLBACK HookWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-  LRESULT rc = CallWindowProc(oldProc, hWnd, uMsg, wParam, lParam);
+  LRESULT rc = oldProc
+      ? CallWindowProc(oldProc, hWnd, uMsg, wParam, lParam)
+      : DefWindowProcW(hWnd, uMsg, wParam, lParam);
   if (uMsg == WM_DROPFILES) {
     if (!def_allowmulti) dropped_files.clear();
-    hDrop = (HDROP)wParam;
+    HDROP hDrop = (HDROP)wParam;
     UINT nNumOfFiles = DragQueryFileW(hDrop, 0xFFFFFFFF, NULL, 0);
     vector<wchar_t> fName;
     for (UINT i = 0; i < nNumOfFiles; i += 1) {
-      fName.resize(DragQueryFileW(hDrop, i, NULL, 0) + 1);
-      DragQueryFileW(hDrop, i, fName.data(), fName.size());
+      const UINT length = DragQueryFileW(hDrop, i, NULL, 0);
+      fName.resize(static_cast<size_t>(length) + 1);
+      if (DragQueryFileW(hDrop, i, fName.data(), length + 1) == 0)
+        continue;
       dropped_files.insert(shorten({fName.data(), fName.size() - 1}));
     }
     DragFinish(hDrop); DWORD dwProcessId;
@@ -85,14 +92,25 @@ LRESULT CALLBACK HookWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 }
 
 LRESULT CALLBACK SetHook(int nCode, WPARAM wParam, LPARAM lParam) {
+  HHOOK currentHook = hook;
+  
   if (nCode == HC_ACTION) {
     CWPSTRUCT *pwp = (CWPSTRUCT *)lParam;
     if (pwp->message == WM_KILLFOCUS) {
-      oldProc = (WNDPROC)SetWindowLongPtrW(enigma::hWnd, GWLP_WNDPROC, (LONG_PTR)HookWndProc);
-      UnInstallHook(hook);
+      SetLastError(0);
+      LONG_PTR previous = SetWindowLongPtrW(
+          enigma::hWnd,
+          GWLP_WNDPROC,
+          (LONG_PTR)HookWndProc
+      );
+      if (previous == 0 && GetLastError() != 0)
+        return CallNextHookEx(hook, nCode, wParam, lParam);
+
+      oldProc = (WNDPROC)previous;
+      UnInstallHook(currentHook);
     }
   }
-  return CallNextHookEx(hook, nCode, wParam, lParam);
+  return CallNextHookEx(currentHook, nCode, wParam, lParam);
 }
 
 HHOOK InstallHook() {
@@ -125,7 +143,7 @@ string file_dnd_apply_filter(string pattern, bool allowfiles, bool allowdirs, bo
   if (filteredNames.empty()) return fname;
   for (const string &filteredName : filteredNames) {
     fname += filteredName + "\n";
-    if (!def_allowmulti) break;
+    if (!allowmulti) break;
   }
   fname.pop_back();
   return fname;
@@ -143,7 +161,19 @@ void file_dnd_set_enabled(bool enable) {
   file_dnd_enabled = enable;
   DragAcceptFiles(enigma::hWnd, file_dnd_enabled);
   if (file_dnd_enabled && hook == NULL)
-  InstallHook(); else dropped_files.clear();
+  if (InstallHook() == NULL)
+    file_dnd_enabled = false;
+  else if (!file_dnd_enabled) {
+    dropped_files.clear();
+    if (oldProc != NULL) {
+      SetWindowLongPtrW(
+          enigma::hWnd,
+          GWLP_WNDPROC,
+          (LONG_PTR)oldProc
+      );
+      oldProc = NULL;
+    }
+  }
 }
 
 void file_dnd_set_files(string pattern, bool allowfiles, bool allowdirs, bool allowmulti) {
