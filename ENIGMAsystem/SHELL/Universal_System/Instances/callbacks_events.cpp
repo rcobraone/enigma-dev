@@ -31,7 +31,7 @@ namespace enigma {
       if (callback) callback();   
   }
   void register_callback_before_collision_event(callback_t callback) {
-	if (!callback)
+	if (callback)
     before_collision_callbacks.push_back(callback);
   }
 
@@ -39,13 +39,13 @@ namespace enigma {
 
   list<callback_t> particle_updating_callbacks;
   void perform_callbacks_particle_updating() {
-}
+
     const list<callback_t> callbacks = particle_updating_callbacks;
     for (callback_t callback : callbacks)
       if (callback) callback();  
   }
   void register_callback_particle_updating(callback_t callback) {
-	if (!callback)
+	if (callback)
     particle_updating_callbacks.push_back(callback);
   }
 
@@ -57,7 +57,7 @@ namespace enigma {
       if (callback) callback();
   }
   void register_callback_clean_up_roomend(callback_t callback) {
-	if (!callback)
+	if (callback)
     clean_up_roomend_callbacks.push_back(callback);
   }
 }
