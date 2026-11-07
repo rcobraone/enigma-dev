@@ -35,7 +35,7 @@ namespace enigma
   template<class Kernel> struct multifunction_variant: variant {
     //These are assignment operators and require a reference to be passed
     template<class T> multifunction_variant& operator=(const T &nv) {
-      variant old = std::move(*this);
+      variant old = *this;
       *(variant*) this = nv;
       static_cast<Kernel*>(this)->function(old);
       return *this;
@@ -43,7 +43,7 @@ namespace enigma
     
     #define declare_relative_assign(op) template<class T>                      \
     multifunction_variant<Kernel> &operator op##=(const T &value) {            \
-      variant old = std::move(*(variant*) this);                               \
+      variant old = *(variant*) this;                              \
       *(variant*) this = old op value;                                         \
       static_cast<Kernel*>(this)->function(old);                               \
       return *this;                                                            \
