@@ -75,6 +75,12 @@ int external_define(string dll,string func,int calltype,bool returntype,int argc
                     bool t01,bool t02,bool t03,bool t04,bool t05,bool t06,bool t07,bool t08,
                     bool t09,bool t10,bool t11,bool t12,bool t13,bool t14,bool t15,bool t16)
 {
+ if (argcount < 0)
+ {
+   DEBUG_MESSAGE("Invalid external argument count.", MESSAGE_TYPE::M_ERROR);
+   return -1;
+ }
+	
   ffi_status status;
 
   int ac=(argcount>16)?16:((int)argcount);
@@ -112,6 +118,7 @@ int external_define(string dll,string func,int calltype,bool returntype,int argc
   if (status != FFI_OK)
   {
     DEBUG_MESSAGE("Defining DLL failed.", MESSAGE_TYPE::M_ERROR);
+    delete a;
     return -1;
   }
 
@@ -128,6 +135,7 @@ int external_define(string dll,string func,int calltype,bool returntype,int argc
   if (dllmod == NULL)
   {
     DEBUG_MESSAGE("Cannot load library \"" + dll + "\"", MESSAGE_TYPE::M_ERROR);
+    delete a;
     return -1;
   }
 
@@ -135,6 +143,7 @@ int external_define(string dll,string func,int calltype,bool returntype,int argc
   if (funcptr==NULL)
   {
     DEBUG_MESSAGE("No such function" + func, MESSAGE_TYPE::M_ERROR);
+    delete a;
     return -1;
   }
 
@@ -190,7 +199,10 @@ void external_free(std::string dll)
 {
   std::map<std::string, void *>::iterator dllIt;
   if ((dllIt=dllHandles.find(dll)) != dllHandles.end())
-    enigma::ExternalFree(dllHandles[dll]);
+    {
+        enigma::ExternalFree(dllIt->second);
+        dllHandles.erase(dllIt);
+    }
 }
 
 }
