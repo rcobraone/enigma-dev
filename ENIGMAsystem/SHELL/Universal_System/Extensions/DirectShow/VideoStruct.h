@@ -34,7 +34,8 @@ struct VideoStruct {
 	}
 
 	~VideoStruct() {
-		pGraph->Release();
+  if (pGraph != NULL)
+    pGraph->Release();
 	}
 };
 
@@ -57,9 +58,13 @@ extern vector<VideoStruct*> videoStructs;
     } enigma::VideoStruct* s = enigma::videoStructs[id];
 #else
   #define get_videor(s,id,r) \
-    enigma::VideoStruct* s = enigma::videoStructs[id];
+  if ((id) < 0 || static_cast<size_t>(id) >= enigma::videoStructs.size() || \
+      enigma::videoStructs[id] == NULL) return r; \
+  enigma::VideoStruct* s = enigma::videoStructs[id];
   #define get_video(s,id) \
-    enigma::VideoStruct* s = enigma::videoStructs[id];
+  if ((id) < 0 || static_cast<size_t>(id) >= enigma::videoStructs.size() || \
+      enigma::videoStructs[id] == NULL) return; \
+  enigma::VideoStruct* s = enigma::videoStructs[id];
 #endif
 
 #endif
