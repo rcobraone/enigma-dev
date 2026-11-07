@@ -497,7 +497,7 @@ namespace enigma
         const enigma::Sprite& spr = enigma::sprites.get(pt->sprite_id);
         const int subimage_count = spr.SubimageCount();
         int subimageindex_initial;
-        if (pt->sprite_random) {
+        if (pt->sprite_random && subimage_count > 0) {
           subimageindex_initial = int(subimage_count*1.0*rand()/(RAND_MAX-1)) % subimage_count;
         }
         else {
