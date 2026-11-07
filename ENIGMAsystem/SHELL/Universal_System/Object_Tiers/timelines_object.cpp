@@ -24,6 +24,7 @@
 */
 
 #include "timelines_object.h"
+#include <cmath>
 
 namespace enigma
 {
@@ -37,6 +38,10 @@ namespace enigma
 
   void object_timelines::advance_curr_timeline() 
   {
+    if (!std::isfinite(timeline_speed) ||
+        !std::isfinite(timeline_position))
+      return;
+	  
     //Find the next instant (it may be right now).
     //Note: If a map lookup each tick is a performance hit, this value can be cached in the object itself with a tuple <timeline_id, timeline_pos, next_moment_iterator>
     if (timeline_index < 0 ||
