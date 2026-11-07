@@ -13,15 +13,6 @@ using std::string;
 
 typedef signed short sample_t;
 
-void handle_error( const char* str )
-{
-        if (str)
-        {
-                DEBUG_MESSAGE(std::string("GME Error: ") + str, MESSAGE_TYPE::M_ERROR);
-                exit( EXIT_FAILURE );
-        }
-}
-
 struct gme_callback {
 	Music_Emu *emu;
 	int track;
@@ -32,11 +23,18 @@ size_t callback(gme_callback *userdata, void *buffer, size_t size) {
 	int track = userdata->track;
 
 	if (!gme_track_ended(emu)) {
-		handle_error( gme_play(emu, size / sizeof(sample_t), (sample_t*)buffer) );
+    const char *error =
+        gme_play(emu, size / sizeof(sample_t), (sample_t*)buffer);
+    if (error)
+      DEBUG_MESSAGE(std::string("GME Error: ") + error,
+                    MESSAGE_TYPE::M_ERROR);
 		return size;
 	}
 	else {
-		handle_error( gme_start_track(emu, track - 1) );
+    const char *error = gme_start_track(emu, track - 1);
+    if (error)
+      DEBUG_MESSAGE(std::string("GME Error: ") + error,
+                    MESSAGE_TYPE::M_ERROR);
 		return 0;
 	}
 }
@@ -47,18 +45,35 @@ void cleanup(gme_callback *userdata) {
 }
 
 void seek(gme_callback *userdata, float position) {
-	handle_error( gme_seek(userdata->emu,position*1000) );
+  const char *error = gme_seek(userdata->emu, position * 1000);
+  if (error)
+    DEBUG_MESSAGE(std::string("GME Error: ") + error,
+                  MESSAGE_TYPE::M_ERROR);;
 }
 
 namespace enigma_user {
 int sound_add_from_gme(string filename, int track) {
 
-	Music_Emu *emu;
-	handle_error( gme_open_file(filename.c_str(), &emu, 44100) );
+	Music_Emu *emu = NULL;
+    if (track < 0)
+        return -1;
+
+    if (track == 0)
+        track = 1;
+
 	if (!emu)
 		return -1;
 
-	handle_error( gme_start_track(emu, track - 1) );
+    const char* error = gme_start_track(emu, track - 1);
+    if (error != NULL)
+    {
+        DEBUG_MESSAGE(
+            std::string("GME Error: ") + error,
+            MESSAGE_TYPE::M_ERROR
+        );
+        gme_delete(emu);
+        return -1;
+    }
 
 	const int sid = enigma::sound_allocate();
 	gme_callback *userdata = new gme_callback;
