@@ -28,9 +28,18 @@
 namespace enigma_user {
 
 string MCI_command(string str) {
-	string ret;
-	mciSendString(str.c_str(), &ret[0], 0, NULL); 
-	return ret;
+       char ret[512] = {};
+       MCIERROR error = mciSendString(
+               str.c_str(),
+               ret,
+               sizeof(ret),
+               NULL
+       );
+
+       if (error != 0)
+               return string();
+
+       return string(ret);
 }
 
 void cd_open_door() {
@@ -47,11 +56,11 @@ void cd_init() {
 }
 
 unsigned long cd_length() {
-
+    return 0;
 }
 
 unsigned cd_number() {
-	unsigned count;
+	unsigned count = 0;
     MCIERROR mciError;
     TCHAR mciReturnBuffer[512];
     mciError = mciSendString("status cdaudio number of tracks", mciReturnBuffer, sizeof(mciReturnBuffer), NULL);
@@ -61,7 +70,8 @@ unsigned cd_number() {
 		// HRESULT_FROM_WIN32(mciError)
         return 0;
     }
-    sscanf(mciReturnBuffer, "%d", &count);
+    if (sscanf(mciReturnBuffer, "%u", &count) != 1)
+        return 0;
 	return count;
 }
 
@@ -81,9 +91,15 @@ void cd_play(unsigned first, unsigned last) {
     MCIERROR err;
 
     // Form the command string.
-	sprintf(achCommandBuff, "play cdaudio from %u to %u", first, last);
+    int result = snprintf(
+        achCommandBuff,
+        sizeof(achCommandBuff),
+        "play cdaudio from %u to %u",
+        first,
+        last
+    );
 
-    if (result == -1) {
+    if (result < 0 || static_cast<size_t>(result) >= sizeof(achCommandBuff)) {
 		//TODO: show error message
         return;
     }
@@ -154,7 +170,7 @@ bool cd_present() {
 
 unsigned long cd_position() {
 	mciSendString("set cdaudio time format milliseconds", NULL, 0, NULL);
-	unsigned long position;
+	unsigned long position = 0;
 	MCIERROR mciError;
 	TCHAR mciReturnBuffer[512];
 	mciError = mciSendString("status cdaudio position", mciReturnBuffer, sizeof(mciReturnBuffer), NULL);
@@ -164,7 +180,8 @@ unsigned long cd_position() {
 		// HRESULT_FROM_WIN32(mciError)
         return 0;
     }
-	sscanf(mciReturnBuffer, "%d", &position);
+       if (sscanf(mciReturnBuffer, "%lu", &position) != 1)
+               return 0;
 	return position;
 }
 
@@ -178,9 +195,14 @@ void cd_set_position(unsigned long pos) {
     MCIERROR err;
 	
     // Form the command string.
-    result = sprintf(achCommandBuff, "seek cdaudio to %u", pos); 
+    result = snprintf(
+        achCommandBuff,
+        sizeof(achCommandBuff),
+        "seek cdaudio to %lu",
+        pos
+    ); 
 
-    if (result == -1) {
+    if (result < 0 || static_cast<size_t>(result) >= sizeof(achCommandBuff)) {
 		//TODO: show error message
         return;
     }
@@ -201,7 +223,7 @@ void cd_set_position(unsigned long pos) {
 
 void cd_set_track_position(unsigned long pos) {
 	mciSendString("set cdaudio time format milliseconds", NULL, 0, NULL);
-	unsigned long position;
+	unsigned long position = 0;
 	MCIERROR mciError;
 	TCHAR mciCommandBuffer[512];
 	TCHAR mciReturnBuffer[512];
@@ -213,12 +235,13 @@ void cd_set_track_position(unsigned long pos) {
 		// HRESULT_FROM_WIN32(mciError)
         return;
     }
-	sscanf(mciReturnBuffer, "%d", &position);
+       if (sscanf(mciReturnBuffer, "%lu", &position) != 1)
+               return;
 	cd_set_position(position + pos);
 }
 
 unsigned cd_track() {
-	unsigned current;
+	unsigned current = 0;
     MCIERROR mciError;
     TCHAR mciReturnBuffer[512];
     mciError = mciSendString("status cdaudio current track", mciReturnBuffer, sizeof(mciReturnBuffer), NULL);
@@ -228,13 +251,14 @@ unsigned cd_track() {
 		// HRESULT_FROM_WIN32(mciError)
         return 0;
     }
-    sscanf(mciReturnBuffer, "%d", &current);
+       if (sscanf(mciReturnBuffer, "%u", &current) != 1)
+               return 0;
 	return current;
 }
 
 unsigned long cd_track_length(unsigned n) {
 	mciSendString("set cdaudio time format milliseconds", NULL, 0, NULL);
-	unsigned long length;
+	unsigned long length = 0;
 	MCIERROR mciError;
 	TCHAR mciCommandBuffer[512];
 	TCHAR mciReturnBuffer[512];
@@ -246,13 +270,14 @@ unsigned long cd_track_length(unsigned n) {
 		// HRESULT_FROM_WIN32(mciError)
         return 0;
     }
-	sscanf(mciReturnBuffer, "%d", &length);
+       if (sscanf(mciReturnBuffer, "%lu", &length) != 1)
+               return 0;
 	return length;
 }
 
 unsigned long cd_track_position() {
 	mciSendString("set cdaudio time format milliseconds", NULL, 0, NULL);
-	unsigned long position;
+	unsigned long position = 0;
 	MCIERROR mciError;
 	TCHAR mciCommandBuffer[512];
 	TCHAR mciReturnBuffer[512];
@@ -264,7 +289,8 @@ unsigned long cd_track_position() {
 		// HRESULT_FROM_WIN32(mciError)
         return 0;
     }
-	sscanf(mciReturnBuffer, "%d", &position);
+       if (sscanf(mciReturnBuffer, "%lu", &position) != 1)
+               return 0;
 	return cd_position() - position;
 }
 
