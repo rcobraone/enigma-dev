@@ -41,16 +41,35 @@ namespace enigma {
   }
   
   struct file {
-    file() {}
-    file(const std::string& fName, std::ios_base::openmode mode) : fn(fName) { fs.open(fName, mode); }
-    file(file&& other) : fn(other.fn) { fs.swap(other.fs); }
-    std::string fn;
-    std::fstream fs;
+  file() : mode(std::ios_base::openmode(0)) {}
+
+  file(const std::string& fName, std::ios_base::openmode openMode)
+      : fn(fName), mode(openMode) {
+    fs.open(fName, openMode);
+  }
+
+  file(file&& other)
+      : fn(std::move(other.fn)), mode(other.mode) {
+    fs.swap(other.fs);
+  }
+
+  std::string fn;
+  std::ios_base::openmode mode;
+  std::fstream fs;
+  
     // AssArray mandatory
-    static const char* getAssetTypeName() { return "FileHandle"; }
-    bool isDestroyed() const { return false; }
-    void destroy() { fs.close(); }
-  };
+   static const char* getAssetTypeName() {
+    return "FileHandle";
+  }
+
+  bool isDestroyed() const {
+    return false;
+  }
+
+  void destroy() {
+    fs.close();
+  }
+};
   
   AssetArray<file> files;
   
@@ -66,13 +85,27 @@ namespace enigma {
   
   static inline int file_open(const std::string& fname, std::ios_base::openmode mode) {
     file f(fname, mode);
+    constexpr int MAX_OPEN_FILES = 32;
+    int open_count = 0;
+
+    for (auto it = files.begin(); it != files.end(); ++it) {
+      if ((*it).second.fs.is_open()) {
+        ++open_count;
+      }
+    }
+
+    if (open_count >= MAX_OPEN_FILES) {
+      return -1;
+    }
     
     try_io_and_print(f)
     
-    if (f.fs.is_open()) {
-      files.add(std::move(f));
-      return files.size()-1;
-    } else return -1;
+    if (!f.fs.is_open()) {
+      return -1;
+    }
+
+    files.add(std::move(f));
+    return static_cast<int>(files.size() - 1);
   }
 } // NAMESPACE enigma
 
@@ -96,9 +129,20 @@ int file_text_open_append(const std::string& fname) {
 
 // Closes the file with the given file id
 void file_text_close(int fileid) {
-  if (enigma::valid_file_handle(fileid)) {
-    enigma::files.get(fileid).fs.close();
-  } else DEBUG_MESSAGE("Cannot close an unopened file: " + std::to_string(fileid), MESSAGE_TYPE::M_USER_ERROR);
+  if (!enigma::valid_file_handle(fileid)) {
+    DEBUG_MESSAGE(
+        "Cannot close an unopened file: " + std::to_string(fileid),
+        MESSAGE_TYPE::M_USER_ERROR
+    );
+    return;
+  }
+
+  auto& f = enigma::files.get(fileid);
+
+  if (!f.fs.is_open()) return;
+
+  f.fs.close();
+  try_io_and_print(f)
 }
 
 // Writes the std::string to the file with the given file id.
@@ -131,10 +175,11 @@ void file_text_writeln(int fileid, const std::string& str) {
 // Reads a string from the file with the given file id and returns this string. A string ends at the end of line.
 std::string file_text_read_string(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return {};
-  auto& fs = enigma::files.get(fileid).fs;
+ auto& fs = enigma::files.get(fileid).fs;
+ 
   std::string line;
   while (true) {
-  const auto next = fs.peek();	  
+  const auto next = fs.peek();
   if (next == std::char_traits<char>::eof() || next == '\n') {
     break;
   }
@@ -160,11 +205,21 @@ std::string file_text_read_all(int fileid) {
 
 bool file_text_eoln(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return true;
-auto& fs = enigma::files.get(fileid).fs;
-const auto next = fs.peek();
 
-return next == '\n' ||
-       next == std::char_traits<char>::eof();
+  auto& fs = enigma::files.get(fileid).fs;
+
+  if (fs.bad() || fs.fail()) {
+    return false;
+  }
+
+  const auto next = fs.peek();
+
+  if (next == '\n') {
+    return true;
+  }
+
+  return next == std::char_traits<char>::eof() && fs.eof();
+
 }
 
 double file_text_read_real(int fileid) { // Reads a real value from the file and returns this value.
@@ -185,7 +240,8 @@ std::string file_text_readln(int fileid) {
 
 bool file_text_eof(int fileid) { // Returns whether we reached the end of the file.
   if (!enigma::valid_file_handle(fileid)) return true;
-  return (enigma::files.get(fileid).fs.eof());
+  const auto& fs = enigma::files.get(fileid).fs;
+  return fs.eof();
 }
 
 void load_info(const std::string& fname) {
@@ -225,16 +281,44 @@ int file_bin_open(const std::string& fname, int mode) {
 // Rewrites the file with the given file id, that is, clears it and starts writing at the start.
 bool file_bin_rewrite(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return false;
-  enigma::files.get(fileid).fs.close();
-  enigma::files.get(fileid).fs.open(enigma::files.get(fileid).fn, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
-  try_io_and_print(enigma::files.get(fileid))
-  return enigma::files.get(fileid).fs.good();
+
+  auto& f = enigma::files.get(fileid);
+  auto& fs = f.fs;
+
+  if (!fs.is_open()) return false;
+
+  fs.close();
+
+  if (fs.fail()) {
+    try_io_and_print(f)
+    return false;
+  }
+
+  fs.clear(); 
+
+  fs.open(
+      f.fn,
+      std::ios::in |
+      std::ios::out |
+      std::ios::binary |
+      std::ios::trunc
+  );
+
+  try_io_and_print(f)
+
+  return fs.is_open() && fs.good();
 }
 
 // Closes the file with the given file id.
 void file_bin_close(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return;
-  enigma::files.get(fileid).fs.close();
+
+  auto& f = enigma::files.get(fileid);
+
+  if (!f.fs.is_open()) return;
+
+  f.fs.close();
+  try_io_and_print(f)
 }
 
 // Returns the size (in bytes) of the file with the given file id.
@@ -301,28 +385,31 @@ size_t file_bin_position(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return 0;
   auto& fs = enigma::files.get(fileid).fs;
   if (!fs.is_open()) return 0;
+   fs.clear();
+   std::streampos position = fs.tellg();
+   
+  fs.clear();
+
+  std::streampos position = fs.tellg();
+
+  if (position == std::streampos(-1)) {
     fs.clear();
-   +std::streampos position = fs.tellg();
-
-if (position == std::streampos(-1)) {
-  fs.clear();
-  position = fs.tellp();
+    position = fs.tellp();
   }
-if (position == std::streampos(-1)) {
-  fs.clear();
-  return 0;
-}
+  if (position == std::streampos(-1)) {
+    fs.clear();
+    return 0;
+  }
 
-const std::streamoff offset = position;
+  const std::streamoff offset = position;
 
-if (offset < 0 ||
-    static_cast<std::uintmax_t>(offset) >
-        static_cast<std::uintmax_t>(
-            std::numeric_limits<size_t>::max())) {
-  fs.clear();
-  return 0;
-}
-
+  if (offset < 0 ||
+      static_cast<std::uintmax_t>(offset) >
+          static_cast<std::uintmax_t>(
+              std::numeric_limits<size_t>::max())) {
+    fs.clear();
+    return 0;
+  }
 return static_cast<size_t>(offset);
 }
 
@@ -344,10 +431,20 @@ void file_bin_write_byte(int fileid, unsigned char byte) {
 // Reads a byte of data from the file and returns this
 int file_bin_read_byte(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return -1;
-  const int value = enigma::files.get(fileid).fs.get();
-  bool good = enigma::files.get(fileid).fs.good();
-  try_io_and_print(enigma::files.get(fileid))
-  return (!good) ? -1 : value;
+
+  auto& f = enigma::files.get(fileid);
+
+  if (!f.fs.is_open()) return -1;
+
+  const int value = f.fs.get();
+
+  if (value == std::char_traits<char>::eof()) {
+    try_io_and_print(f)
+    return -1;
+  }
+
+  try_io_and_print(f)
+  return static_cast<unsigned char>(value);
 }
 
 } // NAMESPACE enigma_user
