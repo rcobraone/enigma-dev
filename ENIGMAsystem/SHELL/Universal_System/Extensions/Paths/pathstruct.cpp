@@ -109,6 +109,11 @@ namespace enigma
         pth->total_length = 0; pth->pointoffset.clear();
         if (!pth->pointarray.size()) return;
 
+        if (fzero(pth->total_length)) {
+            pth->pointoffset[0] = 0;
+            return;
+        }
+
         const size_t pc = pth->pointarray.size();
         const path_point& start = pth->closed ? pth->pointarray[pc-1] : pth->pointarray[0];
         const path_point& end  =  pth->closed ? pth->pointarray[0] : pth->pointarray[pc-1];
