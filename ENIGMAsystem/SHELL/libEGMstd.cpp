@@ -23,12 +23,14 @@
 
 #include <stdio.h>
 #include <sstream>
+#include <cmath>
+#include <limits>
 #include <string>
 
 namespace {
   ///Many integral types (such as long) vary based on platform and architecture. 
   ///To avoid crashing in string(#), we reserve generously.
-  char buf[128];
+  thread_local char buf[128];
 }  // namespace
 
 namespace enigma_user {
@@ -48,7 +50,7 @@ string toString(long long n)          { return string(buf,sprintf(buf,"%lld", n)
 string toString(unsigned long long n) { return string(buf,sprintf(buf,"%llu", n)); }
 #endif
 string toString(char n)               { return string(buf,sprintf(buf,"%d", n)); }
-string toString(char* n)              { return string(n); }
+string toString(char* n)              { return n ? string(n) : string(); }
 string toString(float n)              { return string(buf,sprintf(buf,"%g", n)); }
 string toString(double n)             { return string(buf,sprintf(buf,"%g", n)); }
 string toString(long double n)        { return std::to_string(n); }
@@ -63,13 +65,23 @@ string toString(size_t n, char c)                        { return string (n, c);
 
 string toString(const variant &a) {
   if (a.type == enigma_user::ty_real) {
-    //Ensure that integral types don't pick up any baggage from being stored
-    //  as a double in a var-type.
-    double dVal = a.rval.d;
-    long lVal = (long)dVal;
-    if (dVal == lVal) {
-      return toString(lVal);
-    }
+    const double dVal = a.rval.d;
+
+    if (std::isfinite(dVal)) {
+      const long double ldVal = static_cast<long double>(dVal);
+      const long double minLong =
+          static_cast<long double>(std::numeric_limits<long>::lowest());
+      const long double maxLong =
+          static_cast<long double>(std::numeric_limits<long>::max());
+
+      if (ldVal >= minLong && ldVal <= maxLong) {
+        const long lVal = static_cast<long>(dVal);
+        if (dVal == static_cast<double>(lVal)) {
+          return toString(lVal);
+        }
+      }
+     }
+
     return toString(dVal);
   }
   return a.sval();
