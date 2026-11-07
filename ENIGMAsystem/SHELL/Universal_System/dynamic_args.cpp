@@ -18,6 +18,8 @@
 #include "var4.h"
 #include "dynamic_args.h"
 #include <algorithm>
+#include <cmath>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -26,6 +28,47 @@ using namespace std;
 using namespace enigma;
 
 #define v(argv) (*static_cast<vector<variant>*>(argv))
+
+namespace {
+
+bool dynamic_variant_less(const variant& lhs, const variant& rhs) {
+  // Establish a deterministic ordering between variant types.
+  if (lhs.type != rhs.type) {
+    return lhs.type < rhs.type;
+  }
+
+  switch (lhs.type) {
+    case variant::ty_string:
+      return lhs.sval() < rhs.sval();
+
+    case enigma_user::ty_pointer:
+      return std::less<const void*>()(lhs.rval.p, rhs.rval.p);
+
+    case variant::ty_real: {
+      const double a = lhs.rval.d;
+      const double b = rhs.rval.d;
+      const bool a_nan = std::isnan(a);
+      const bool b_nan = std::isnan(b);
+
+      if (a_nan != b_nan) return !a_nan;
+      if (a_nan) return false;
+      return a < b;
+    }
+
+    default:
+      return false;
+  }
+}
+	
+int checked_argc(const vector<variant>& arguments) {
+
+  if (arguments.size() >
+      static_cast<size_t>(std::numeric_limits<int>::max())) {
+    throw std::length_error("ENIGMA: too many dynamic arguments");
+  }
+  return static_cast<int>(arguments.size());
+ }
+}
 
 varargs& varargs::operator,(variant x) {
   auto& arguments = v(argv);
@@ -40,7 +83,10 @@ varargs& varargs::operator,(variant x) {
   return *this;
 }
 void varargs::reverse() { std::reverse(v(argv).begin(),v(argv).end()); }
-void varargs::sort() { std::sort(v(argv).begin(),v(argv).end()); }
+void varargs::sort() {
+  auto& arguments = v(argv);
+  std::sort(arguments.begin(), arguments.end(), dynamic_variant_less);
+}
 variant varargs::get(int i) const {
   if (i < 0)
     return variant();
@@ -52,10 +98,9 @@ if (index >= arguments.size()) return variant();
 return arguments[index];
 }
 varargs::varargs(): argc(0), argv(new vector<variant>) {}
-varargs::varargs(variant x): argc(1), argv(new vector<variant>) { v(argv).push_back(x); }
+varargs::varargs(variant x): argc(1), argv(new vector<variant>{x}) {}
 varargs::varargs(const varargs& other):
-
-    argc(other.argc),
+    argc(checked_argc(v(other.argv))),
     argv(new vector<variant>(v(other.argv))) {}
 
 varargs::varargs(varargs&& other):
@@ -69,8 +114,11 @@ varargs& varargs::operator=(const varargs& other) {
   if (this == &other)
     return *this;
 
-  v(argv) = v(other.argv);
-  argc = other.argc;
+  vector<variant> replacement(v(other.argv));
+  const int replacement_argc = checked_argc(replacement);
+
+  v(argv).swap(replacement);
+  argc = replacement_argc;
   return *this;
 }
 

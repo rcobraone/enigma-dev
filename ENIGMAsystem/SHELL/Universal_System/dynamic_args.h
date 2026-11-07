@@ -32,8 +32,13 @@
 
 namespace enigma {
   struct varargs {
+	// Number of arguments stored in argv.
     int argc;
+
+    // Owned pointer to a heap-allocated std::vector<variant>.
+    // The storage is managed by dynamic_args.cpp.
     void *argv;
+    
     #ifndef JUST_DEFINE_IT_RUN
     void sort();
     void reverse();
