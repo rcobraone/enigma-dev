@@ -55,6 +55,8 @@ namespace enigma_user {
   };
 
   int font_add(std::string name, unsigned size, bool bold, bool italic, unsigned first, unsigned last) {
+    if (last <= first)
+      return -1;
 
     if (!enigma::FreeTypeAlive)
       return -1;
@@ -71,8 +73,10 @@ namespace enigma_user {
     // GameMaker has always generated fonts at 96 dpi, default Windows dpi since 1980s
     error = FT_Set_Char_Size( face, size * 64, 0, 96, 0); // 96 dpi, 64 is 26.6 fixed point conversion
 
-    if (error != 0)
+    if (error != 0) {
+      FT_Done_Face(face);    
       return -1;
+    }
 
     slot = face->glyph;
 
@@ -93,10 +97,14 @@ namespace enigma_user {
     for (unsigned c = first; c < last; ++c) {
       error = FT_Load_Char(face, c, FT_LOAD_DEFAULT);
 
-      #ifdef DEBUG_MODE
-      if (error != 0)
+      if (error != 0) {
+        #ifdef DEBUG_MODE
         DEBUG_MESSAGE("Freetype error loading metrics for char: " + std::to_string(static_cast<char>(c)), MESSAGE_TYPE::M_ERROR);
-      #endif
+        #endif
+        FT_Done_Face(face);
+        delete rootNode;
+        return -1;
+      }
 
       FT_Bitmap& charBitmap = slot->bitmap;
 
@@ -122,7 +130,11 @@ namespace enigma_user {
         w > h ? h <<= 1 : w <<= 1,
         rootNode = expand(rootNode, w, h);
         //printf("Expanded to %d by %d\n", w, h);
-        if (!w or !h) return -1;
+        if (!w or !h) {
+          delete rootNode;
+          FT_Done_Face(face);
+          return -1;
+        }
       }
     }
 
