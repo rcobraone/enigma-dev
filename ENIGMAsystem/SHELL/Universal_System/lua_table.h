@@ -89,21 +89,27 @@ template <class T> struct lua_table {
   T& operator[] (size_t ind) {
     if (ind == std::numeric_limits<size_t>::max())
       return sparse[ind];
+      
     if (ind == std::numeric_limits<size_t>::max() - 1) {
-      mx_size = std::numeric_limits<size_t>::max();
-      return sparse[ind];
+   T& result = sparse[ind];
+   mx_size = std::numeric_limits<size_t>::max();
+   return result;
     }     	  
-    mx_size = my_max(ind+1, mx_size);
+
     if (ind >= dense.size()) {
       size_t nsize = dense.capacity();
       if (dense.size() <= std::numeric_limits<size_t>::max() / 2)
         nsize = my_max(dense.size() << 1, nsize);
       if (ind >= nsize) {
-        return sparse[ind];
-      }
+   T& result = sparse[ind];
+   mx_size = my_max(ind + 1, mx_size);
+   return result;
+    }
       upsize(ind + 1);
     }
-    return dense[ind];
+ T& result = dense[ind];
+ mx_size = my_max(ind + 1, mx_size);
+ return result;
   }
 
   const T& operator[] (size_t ind) const {
@@ -116,10 +122,17 @@ template <class T> struct lua_table {
   }
 
   void fill(const T &value, size_t length) {
-    upsize(length);
-    if (mx_size < length) mx_size = length;
-    for (size_t i = 0; i < length; ++i)
-      dense[i] = value;
+    dense_type replacement(length, value);
+
+    dense.swap(replacement);
+
+    auto it = sparse.begin();
+    while (it != sparse.end() && it->first < length) {
+      it = sparse.erase(it);
+    }
+
+    if (mx_size < length)
+      mx_size = length;
   }
 
   T& operator*() {
@@ -152,7 +165,16 @@ template <class T> struct lua_table {
   lua_table<T>& operator= (const lua_table<T>& x) {
     if (this == &x)
       return *this;	  
-    pick_up(x);
+
+    lua_table<T> temp(x);
+
+    dense.swap(temp.dense);
+    sparse.swap(temp.sparse);
+
+    const size_t old_size = mx_size;
+    mx_size = temp.mx_size;
+    temp.mx_size = old_size;
+
     return *this;
   }
 
