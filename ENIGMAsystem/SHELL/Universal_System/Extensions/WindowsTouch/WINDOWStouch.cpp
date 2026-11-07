@@ -31,7 +31,6 @@ namespace enigma {
   }
   
   void windows_touch_extension_register(HWND hWnd) {
-    MessageBox(hWnd, "Just a test", "Hello, world!", MB_OK);
   }
 
   //extern LRESULT CALLBACK (*touch_extension_callback)(HWND hWndParameter, UINT message,WPARAM wParam, LPARAM lParam) = &windows_touch_extension_callback;
