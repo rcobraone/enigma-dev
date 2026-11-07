@@ -104,7 +104,7 @@ namespace enigma
     }
   }
 
-  iterator::operator bool() { return it && it->inst; }
+  iterator::operator bool() const { return it && it->inst; }
   iterator &iterator::operator++() {
     if (it)
       it = it->next;
@@ -389,7 +389,7 @@ namespace enigma
   {
     if (!who)
       return NULL;
-    }
+    
 	  
     std::unique_ptr<inst_iter> ins(new inst_iter(who));
     
@@ -400,7 +400,7 @@ namespace enigma
     {
       return new winstance_list_iterator(it.first);
     }
-    +
+    
 
     std::unique_ptr<winstance_list_iterator> result;
 
@@ -437,12 +437,11 @@ namespace enigma
       ins->next = NULL;
       
     ins.release();
-    return new winstance_list_iterator(it.first);
+    return result.release();
   }
   inst_iter *link_obj_instance(object_basic* who, int oid)
   {
-    if (!who)
-      return NULL;  
+ 
     if (!who || oid < 0 ||
         static_cast<size_t>(oid) >= object_idmax)
       return NULL;  
