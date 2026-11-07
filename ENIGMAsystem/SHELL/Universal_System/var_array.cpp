@@ -27,8 +27,7 @@
 
 #include "var_array.h"
 #include "var4.h"
-#include <cstdint>
-#include <vector>
+#include <limits>
 
 namespace enigma_user {
 
@@ -47,27 +46,48 @@ bool array_equals(const var& arr1, const var& arr2) {
   return true;
 }
 void array_copy(var& dest, size_t dest_index, const var& src, size_t src_index, size_t length) {
-  if (length != 0 &&
-      (length - 1 > SIZE_MAX - dest_index ||
-       length - 1 > SIZE_MAX - src_index))
+
+ if (length == 0)
     return;
 
-  // Preserve the original source values when copying within one array.
-  if (&dest == &src) {
-    std::vector<variant> temp;
-    temp.reserve(length);
-    for (size_t i = 0; i < length; ++i)
-      temp.push_back(src[src_index + i]);
 
-    for (size_t i = 0; i < length; ++i)
-      dest[dest_index + i] = temp[i];
-    return;
+ // var::operator[] accepts int, not size_t.
+ // Reject indices that cannot be represented safely.
+ constexpr size_t max_index =
+     static_cast<size_t>(std::numeric_limits<int>::max());
+
+ if (dest_index > max_index || src_index > max_index)
+   return;
+
+ if (length - 1 > max_index - dest_index ||
+     length - 1 > max_index - src_index)
+   return;
+
+ // Self-copy must preserve the original source values.
+ // Copy backwards when the destination overlaps to the right.
+ if (&dest == &src) {
+   if (dest_index == src_index)
+     return;
+
+   if (dest_index > src_index) {
+     for (size_t i = length; i > 0; --i) {
+       const size_t offset = i - 1;
+       dest[static_cast<int>(dest_index + offset)] =
+           src[static_cast<int>(src_index + offset)];
+     }
+   } else {
+     for (size_t i = 0; i < length; ++i) {
+       dest[static_cast<int>(dest_index + i)] =
+           src[static_cast<int>(src_index + i)];
+     }
+   }
   }
-     
-  for (size_t i = 0; i < length; ++i) {
-    dest[dest_index + i] = src[src_index + i];
+   for (size_t i = 0; i < length; ++i) { 
+   dest[static_cast<int>(dest_index + i)] =
+       src[static_cast<int>(src_index + i)];
   }
 }
+
 int array_length_1d(const var& v) { return v.array_len(); }
 int array_length_2d(const var& v, int n) {
   return n < 0 ? 0 : v.array_len(n);
@@ -78,8 +98,7 @@ void array_set(var& v, int pos, variant value) {
   v[pos] = value;
 }
 bool is_array(const var& v) {
-  //There is no way (currently) to downsize an array from >1 element, so this might not be accurate.
-  return (v.array_height() > 1) || (v.array_len() > 1);
+ return v.array_height() > 0 || v.array_len() > 0;
 }
 
 }  // namespace enigma_user
