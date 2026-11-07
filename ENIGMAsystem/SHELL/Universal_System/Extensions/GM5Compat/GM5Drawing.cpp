@@ -34,6 +34,7 @@ using std::vector;
 using std::swap;
 
 namespace enigma {
+constexpr double gm5_pi = 3.141592653589793238462643383279502884;
 
 ///Simple container class for a Vertex in a Polygon.
 ///A color of -1 means "the color of the previous vertex", and defaults to the current draw_color.
@@ -146,8 +147,8 @@ void draw_ellipse(gs_scalar x1, gs_scalar y1, gs_scalar x2, gs_scalar y2)
   draw_set_color(pen_color);
   gs_scalar x = (x1+x2)/2,y=(y1+y2)/2;
   gs_scalar hr = fabs(x2-x),vr=fabs(y2-y);
-  gs_scalar pr = 2*M_PI/draw_get_circle_precision();
-  for(gs_scalar i=pr;i<M_PI;i+=pr) {
+  gs_scalar pr = 2*enigma::gm5_pi/draw_get_circle_precision();
+  for(gs_scalar i=pr;i<enigma::gm5_pi;i+=pr) {
     gs_scalar xc1 = cos(i)*hr;
     gs_scalar yc1 = sin(i)*vr;
     i += pr;
@@ -162,7 +163,7 @@ void draw_ellipse(gs_scalar x1, gs_scalar y1, gs_scalar x2, gs_scalar y2)
   //These are needed to prevent the top half-width of the line from overlapping for wide lines.
   //This is clearly massively inefficient; currently it rotates the entire shape through each half-width
   //  in an attempt to cover blank spots.
-  for(gs_scalar i=pr;i<M_PI;i+=pr) {
+  for(gs_scalar i=pr;i<enigma::gm5_pi;i+=pr) {
     gs_scalar xc1 = cos(i+pr/2)*hr;
     gs_scalar yc1 = sin(i+pr/2)*vr;
     i += pr;
@@ -173,7 +174,7 @@ void draw_ellipse(gs_scalar x1, gs_scalar y1, gs_scalar x2, gs_scalar y2)
     draw_line_width(x+xc1,y-yc1  ,  x+xc2,y-yc2  , lwid);
     draw_line_width(x-xc1,y-yc1  ,  x-xc2,y-yc2  , lwid);
   }
-  for(gs_scalar i=pr;i<M_PI;i+=pr) {
+  for(gs_scalar i=pr;i<enigma::gm5_pi;i+=pr) {
     gs_scalar xc1 = cos(i-pr/2)*hr;
     gs_scalar yc1 = sin(i-pr/2)*vr;
     i += pr;
@@ -205,10 +206,10 @@ void draw_circle(gs_scalar x, gs_scalar y, float radius)
   //This is borrowed from General drawing code.
   int old_color = draw_get_color();
   draw_set_color(pen_color);
-  double pr = 2 * M_PI / draw_get_circle_precision();
+  double pr = 2 * enigma::gm5_pi / draw_get_circle_precision();
   double oldX = 0.0;
   double oldY = 0.0;
-  for (double i = 0; i <= 2*M_PI; i += pr) {
+  for (double i = 0; i <= 2*enigma::gm5_pi; i += pr) {
     double xc1=cos(i)*radius;
     double yc1=sin(i)*radius;
     double newX = x+xc1;
@@ -223,7 +224,7 @@ void draw_circle(gs_scalar x, gs_scalar y, float radius)
   //Similar to the ellipse drawing code, this overlays patches to the circle's shape.
   //It is also inefficient, but necessary for large pen widths.
   oldX = oldY = 0.0;
-  for (double i = 0; i <= 2*M_PI; i += pr) {
+  for (double i = 0; i <= 2*enigma::gm5_pi; i += pr) {
     double xc1=cos(i+pr/2)*radius;
     double yc1=sin(i+pr/2)*radius;
     double newX = x+xc1;
@@ -301,6 +302,8 @@ void draw_polygon_end()
 
   //We need a copy of currPoly since draw_polygon_end() will clear it.
   std::list<enigma::PolyVertex> cachedPoly = enigma::currComplexPoly;
+  if (cachedPoly.empty())
+    return;
 
   //Fill the shape, if we have the correct brush style.
   //Note: At the moment, we treat all unsupported brush styles as "solid"; only "hollow" avoids drawing.
