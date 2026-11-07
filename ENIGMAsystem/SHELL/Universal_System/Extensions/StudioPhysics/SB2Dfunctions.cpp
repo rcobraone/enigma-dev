@@ -212,7 +212,7 @@ int physics_fixture_create(int world)
 int physics_fixture_create()
 {
   // this needs to create a fixture on the object, thats why i can't just overload the prior function
-  physics_fixture_create(0);
+  return physics_fixture_create(0);
 }
 
 void physics_fixture_bind(int id)
@@ -231,7 +231,7 @@ void physics_fixture_set_collision_group(int id, int group)
   get_fixture(sb2dfixture, id);
   // sets the collision group used to make parts of things not collide, like a ragdoll for
   // instance should not collide with itself
-  b2Filter newfilter;
+  b2Filter newfilter = sb2dfixture->fixture->GetFilterData();
   newfilter.groupIndex = group;
   fixtures[id]->fixture->SetFilterData(newfilter);
 }
@@ -240,6 +240,7 @@ void physics_fixture_delete(int id)
 {
   get_fixture(sb2dfixture, id);
   delete sb2dfixture;
+  fixtures[id] = nullptr;
 }
 
 void physics_fixture_set_box_shape(int id, double halfwidth, double halfheight)
@@ -264,6 +265,9 @@ void physics_fixture_set_polygon_shape(int id)
 {
   get_fixture(sb2dfixture, id);
   b2PolygonShape shape;
+  
+  if (sb2dfixture->vertices.size() < 3)
+    return;
 
   shape.Set(&sb2dfixture->vertices[0], sb2dfixture->vertices.size());
   sb2dfixture->shape = &shape;
@@ -273,8 +277,11 @@ void physics_fixture_set_polygon_shape(int id)
 void physics_fixture_set_edge_shape(int id, bool adjstart, bool adjend)
 {
   get_fixture(sb2dfixture, id);
+  const size_t required_vertices = 2 + static_cast<size_t>(adjstart) + static_cast<size_t>(adjend);
+  if (sb2dfixture->vertices.size() < required_vertices)
+    return;
+  
   b2EdgeShape shape;
-
   int vid = 0;
   if (adjstart) {
     shape.m_hasVertex0 = true;
@@ -454,10 +461,10 @@ double physics_fixture_get_inertia(int id)
 
 void physics_apply_force(int world, double xpos, double ypos, double xforce, double yforce, bool wake)
 {
-  get_fixture(sb2dworld, world);
+  get_world(sb2dworld, world);
   for (int i = 0; i < fixtures.size(); i++)
   {
-    if (fixtures[i]->world == world)
+    if (fixtures[i] != nullptr && fixtures[i]->world == world)
     {
       fixtures[i]->body->ApplyForce(b2Vec2(xforce, yforce), b2Vec2(xpos, ypos), wake);
     }
@@ -466,10 +473,10 @@ void physics_apply_force(int world, double xpos, double ypos, double xforce, dou
 
 void physics_apply_impulse(int world, double xpos, double ypos, double ximpulse, double yimpulse, bool wake)
 {
-  get_fixture(sb2dworld, world);
+  get_world(sb2dworld, world);
   for (int i = 0; i < fixtures.size(); i++)
   {
-    if (fixtures[i]->world == world)
+    if (fixtures[i] != nullptr && fixtures[i]->world == world)
     {
       fixtures[i]->body->ApplyLinearImpulse(b2Vec2(ximpulse, yimpulse), b2Vec2(xpos, ypos), wake);
     }
