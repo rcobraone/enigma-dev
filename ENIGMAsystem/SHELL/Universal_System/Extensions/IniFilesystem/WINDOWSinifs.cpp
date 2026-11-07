@@ -33,6 +33,7 @@
 
 #include <cwchar>
 #include <string>
+#include <vector>
 
 using std::to_string;
 using std::string;
@@ -45,10 +46,28 @@ static tstring iniFilename = L"";
 namespace enigma_user {
 
 void ini_open(string fname) {
-  wchar_t rpath[MAX_PATH];
   tstring tstr_fname = widen(fname);
-  GetFullPathNameW(tstr_fname.c_str(), MAX_PATH, rpath, NULL);
-  iniFilename = rpath;
+  DWORD bufferSize = MAX_PATH;
+
+  std::vector<wchar_t> rpath(bufferSize);
+
+  for (;;) {
+    DWORD length = GetFullPathNameW(
+        tstr_fname.c_str(), bufferSize, rpath.data(), NULL);
+
+    if (length == 0) {
+      iniFilename = L"";
+      return;
+    }
+
+    if (length < bufferSize) {
+      iniFilename.assign(rpath.data(), length);
+      return;
+    }
+
+    bufferSize = length + 1;
+    rpath.resize(bufferSize);
+  }
 }
 
 void ini_close() {
@@ -67,11 +86,10 @@ string ini_read_string(string section, string key, string defaultValue) {
 
 float ini_read_real(string section, string key, float defaultValue) {
   wchar_t res[255];
-  wchar_t def[255];
+  tstring tstr_defaultValue = widen(to_string(defaultValue));
   tstring tstr_section = widen(section);
   tstring tstr_key = widen(key);
-  GetPrivateProfileStringW(tstr_section.c_str(), tstr_key.c_str(), def, res, 255, iniFilename.c_str());
-  string result = shorten(res);
+  GetPrivateProfileStringW(tstr_section.c_str(), tstr_key.c_str(), tstr_defaultValue.c_str(), res, 255, iniFilename.c_str());
   return (float)atof(result.c_str());
 }
 
