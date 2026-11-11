@@ -36,6 +36,9 @@ namespace enigma
   extern size_t script_idmax;
   void map_resource_ids(nameid_pair* n)
   {
+    if (n == nullptr)
+      return;
+	  
     for (nameid_pair* i = n; i->id != -1; ++i)
     {
       resources[i->name] = i->id;
