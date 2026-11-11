@@ -90,7 +90,7 @@ void instance_activate_all() {
     while (iter != enigma::instance_deactivated_list.end()) {
        
         enigma::object_basic* const inst = iter->second;
-
+        const int id = iter->first;
         const auto live = enigma::instance_list.find(id);
         if (!inst || live == enigma::instance_list.end() ||
             !live->second || live->second->inst != inst) {
@@ -155,7 +155,7 @@ void instance_activate_object(int obj) {
     while (iter != enigma::instance_deactivated_list.end()) {
 		
         enigma::object_basic* const inst = iter->second;
-
+        const int id = iter->first;
         const auto live = enigma::instance_list.find(id);
         if (!inst || live == enigma::instance_list.end() ||
             !live->second || live->second->inst != inst) {
