@@ -472,7 +472,7 @@ int room_restart()
     return 0;
 
   enigma::room_switching_id = indx;
-  enigma::room_switching_restartgame = false;
+  enigma::room_switching_restartgame = true;
   return 1;
 }
 
@@ -693,166 +693,80 @@ namespace enigma_user
  
 
 int room_tile_add_ext(int indx, int bck, int left, int top,
-
                       int width, int height, int x, int y,
-
                       int depth, double xscale, double yscale,
-
                       double alpha, int color)
 
 {
 
   if (!valid_room_index(indx))
-
     return 0;
 
- 
 
   if (enigma::maxtileid < 0 ||
-
       enigma::maxtileid >= INT_MAX)
-
     return 0;
 
- 
-
   enigma::roomstruct* rm = enigma::roomdata[indx];
-
- 
 
   const int tile_id = enigma::maxtileid;
 
- 
-
   try
-
   {
-
     rm->tiles.emplace_back(
-
         tile_id,
-
         bck,
-
         left,
-
         top,
-
         depth,
-
         height,
-
         width,
-
         x,
-
         y,
-
         alpha,
-
         xscale,
-
         yscale,
-
         color
-
     );
-
   }
-
   catch (const std::bad_alloc&)
-
   {
-
     return 0;
-
   }
-
   catch (const std::length_error&)
-
   {
-
     return 0;
-
   }
-
- 
 
   // Increment only after successful insertion.
-
   ++enigma::maxtileid;
 
- 
-
   return 1;
-
 }
 
-Zastąp room_instance_add():
-
-cpp
-
- 
 
 int room_instance_add(int indx, int x, int y, int obj)
 {
   if (!valid_room_index(indx))
     return 0;
 
-  if (enigma::maxid < 0 ||
-      enigma::maxid >= INT_MAX)
+  if (enigma::maxid < 0 || enigma::maxid >= INT_MAX)
     return 0;
-
-  enigma::roomstruct* rm = enigma::roomdata[indx];
+     
+  enigma::roomstruct *rm = enigma::roomdata[indx];
 
   const int instance_id = enigma::maxid;
-
-  try
-  {
-    rm->instances.emplace_back(
-        instance_id,
-        obj,
-        x,
-        y
-    );
+  try {
+    rm->instances.emplace_back(instance_id, obj, x, y);
   }
-  catch (const std::bad_alloc&)
-  {
+  catch (const std::bad_alloc&) {
     return 0;
   }
-  catch (const std::length_error&)
-  {
+  catch (const std::length_error&) {
     return 0;
   }
 
-  // Increment only after successful insertion.
   ++enigma::maxid;
-
-  return 1;
-}
-
-int room_tile_clear(int indx)
-{
-  if (!valid_room_index(indx))
-    return 0;
-  enigma::roomstruct *rm = enigma::roomdata[indx];
-
-  rm->tiles.clear();
-
-  return 1;
-}
-
-int room_instance_add(int indx, int x, int y, int obj)
-{
-  if (!valid_room_index(indx))
-    return 0;
-  enigma::roomstruct *rm = enigma::roomdata[indx];
-  rm->instances.emplace_back(
-    enigma::maxid++,
-    obj,
-    x,
-    y
-  );
   return 1;
 }
 
