@@ -44,7 +44,7 @@ return nullptr;
   const uLong output_bound = compressBound(input_size);
 
   // Detect possible integer overflow in compressBound().
-  if (output_bound < input_size
+  if (output_bound < input_size)
     return nullptr;
 
   uLongf outsize = static_cast<uLongf>(output_bound);
