@@ -20,8 +20,8 @@
  *      along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **/
 #pragma once
-#ifndef ENIGMA_INIFILESYSTEM_HPP
-#define ENIGMA_INIFILESYSTEM_HPP
+#ifndef ENIGMA_JSON_EXTENSION_HPP
+#define ENIGMA_JSON_EXTENSION_HPP
 #include "Universal_System/estring.h"
 
 #include <string>
@@ -38,4 +38,4 @@ namespace enigma_user
 }
 
 
-#endif // ENIGMA_INIFILESYSTEM_HPP
+#endif // ENIGMA_JSON_EXTENSION_HPP

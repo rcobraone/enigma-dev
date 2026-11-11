@@ -33,18 +33,18 @@ using std::string;
 
 namespace enigma_user
 {
-	int RecursiveDSList(Json::Value value);
 
 	constexpr unsigned JSON_MAX_NESTING_DEPTH = 256;
 
-    int RecursiveDSMap(Json::Value root, unsigned depth)
+       int RecursiveDSList(Json::Value root, unsigned depth);
+
+       int RecursiveDSMap(Json::Value root, unsigned depth)
 	{
-		int jsonObject=ds_map_create();
         if (depth > JSON_MAX_NESTING_DEPTH)
         {
-        ds_map_destroy(jsonObject);
         return -1;        
         }
+        int jsonObject=ds_map_create();
 
 		Json::Value::Members m=root.getMemberNames();
 		for (Json::Value::Members::iterator it = m.begin() ; it != m.end(); ++it)
@@ -67,7 +67,7 @@ namespace enigma_user
 			}
 			else if (root[*it].isIntegral())
 			{
-				ds_map_add(jsonObject,*it,root[*it].asInt());
+				ds_map_add(jsonObject,*it,root[*it].asDouble());
 			}
 			else if (root[*it].isDouble())
 			{
@@ -83,7 +83,7 @@ namespace enigma_user
 			}
 			else if (root[*it].isArray())
 			{
-				int dsmap=RecursiveDSMap(root[*it], depth + 1);
+				int dsmap=RecursiveDSList(root[*it], depth + 1);
 				if (dsmap==-1)
 				{
 					ds_map_destroy(jsonObject);
@@ -103,6 +103,7 @@ namespace enigma_user
 			}
 			else
 			{
+				ds_map_destroy(jsonObject);
 				return -1;
 			}
 		}
@@ -111,14 +112,13 @@ namespace enigma_user
 	
 	int RecursiveDSList(Json::Value root, unsigned depth)
 	{
-		int jsonArray=ds_list_create();
 
         if (depth > JSON_MAX_NESTING_DEPTH)
         {
-        ds_list_destroy(jsonArray);
         return -1;
         }
-
+        int jsonArray=ds_list_create();
+        
 		for (int i=0; i<root.size(); ++i)
 		{
 			if (root[i].isNull())
@@ -139,7 +139,7 @@ namespace enigma_user
 			}
 			else if (root[i].isIntegral())
 			{
-				ds_list_add(jsonArray,(enigma::varargs(), root[i].asInt()));
+				ds_list_add(jsonArray,(enigma::varargs(), root[i].asDouble()));
 			}
 			else if (root[i].isDouble())
 			{
@@ -155,7 +155,7 @@ namespace enigma_user
 			}
 			else if (root[i].isArray())
 			{
-				int dsmap=RecursiveDSList(root[i]);
+				int dsmap=RecursiveDSList(root[i], depth + 1);
 				if (dsmap==-1)
 				{
 					ds_list_destroy(jsonArray);
@@ -175,6 +175,7 @@ namespace enigma_user
 			}
 			else
 			{
+				ds_list_destroy(jsonArray);
 				return -1;
 			}
 		}
@@ -185,7 +186,7 @@ namespace enigma_user
 	{
 		Json::Value root;
 		Json::Reader reader;
-		bool parsingSuccessful = reader.parse( string(data), root );
+		bool parsingSuccessful = reader.parse(data, root);
 		if ( !parsingSuccessful )
 		{
 			DEBUG_MESSAGE("Failed to parse JSON" + reader.getFormattedErrorMessages(), MESSAGE_TYPE::M_ERROR);
@@ -229,10 +230,11 @@ static std::string json_encode_string(const std::string &value)
 		std::stringstream encoding_accumulator;
 
 		encoding_accumulator << '{';
+	    const int map_size = enigma_user::ds_map_size(ds_map);
 
 		variant key{enigma_user::ds_map_find_first(ds_map)};
 
-		for (int i = 0; i < enigma_user::ds_map_size(ds_map); i++) {
+		for (int i = 0; i < map_size; ++i) {
 			encoding_accumulator << json_encode_string(string(key)) << ':';
 
 			variant value {enigma_user::ds_map_find_value(ds_map, key)};
@@ -245,7 +247,7 @@ static std::string json_encode_string(const std::string &value)
 			key = enigma_user::ds_map_find_next(ds_map, key);
 			
 			// Add comma if not last element
-			if (i != enigma_user::ds_map_size(ds_map) - 1) encoding_accumulator << ',';
+			if (i != map_size - 1) encoding_accumulator << ',';
 		}
 
 		encoding_accumulator << '}';
