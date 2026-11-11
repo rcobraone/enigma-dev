@@ -27,6 +27,7 @@
  \********************************************************************************/
 
 #include <float.h>
+#include <cmath>
 #include <random>
 #include <algorithm>
 #include <iterator>
@@ -47,6 +48,57 @@ using namespace std;
 template<typename T> static inline T maxv(T a, T b) { return (a > b) ? a : b; }
 template<typename T> static inline T minv(T a, T b) { return (a < b) ? a : b; }
 
+struct grid_disk_bounds
+{
+    size_t x1, y1, x2, y2;
+};
+
+static inline bool calculate_disk_bounds(
+    double x, double y, double r,
+    unsigned int width, unsigned int height,
+    grid_disk_bounds& bounds)
+{
+    if (!std::isfinite(x) || !std::isfinite(y) ||
+        !std::isfinite(r) || r < 0.0 ||
+        width == 0 || height == 0)
+        return false;
+
+    const long double left =
+        std::ceil(static_cast<long double>(x) - r);
+    const long double top =
+        std::ceil(static_cast<long double>(y) - r);
+    const long double right =
+        std::floor(static_cast<long double>(x) + r) + 1.0L;
+    const long double bottom =
+        std::floor(static_cast<long double>(y) + r) + 1.0L;
+
+    if (!std::isfinite(left) || !std::isfinite(top) ||
+        !std::isfinite(right) || !std::isfinite(bottom))
+        return false;
+
+    if (right <= 0.0L || bottom <= 0.0L ||
+        left >= static_cast<long double>(width) ||
+        top >= static_cast<long double>(height))
+        return false;
+
+    const long double clipped_left = std::max(0.0L, left);
+    const long double clipped_top = std::max(0.0L, top);
+    const long double clipped_right =
+        std::min(static_cast<long double>(width), right);
+    const long double clipped_bottom =
+        std::min(static_cast<long double>(height), bottom);
+
+    if (clipped_left >= clipped_right ||
+        clipped_top >= clipped_bottom)
+        return false;
+
+    bounds.x1 = static_cast<size_t>(clipped_left);
+    bounds.y1 = static_cast<size_t>(clipped_top);
+    bounds.x2 = static_cast<size_t>(clipped_right);
+    bounds.y2 = static_cast<size_t>(clipped_bottom);
+    return true;
+}
+
 template<typename t> bool tequal(t v1, t v2) { return v1 == v2; }
 template<> bool tequal(float v1, float v2)   { return fequal(v1, v2); }
 template<> bool tequal(double v1, double v2) { return fequal(v1, v2); }
@@ -66,14 +118,15 @@ class grid
 
     public:
     grid() : xgrid(0), ygrid(0), grid_array(nullptr) {}
-    grid(const unsigned int w, const unsigned int h) {
-      ygrid = h;
-      xgrid = w;
+    grid(const unsigned int w, const unsigned int h)
+        : xgrid(w), ygrid(h), grid_array(nullptr) {
       if (h != 0 && w > std::numeric_limits<size_t>::max() / h)
         throw std::bad_array_new_length();
       grid_array = new t[static_cast<size_t>(w) * h];
     }
-    ~grid() : xgrid(0), ygrid(0), grid_array(nullptr) {}
+    ~grid() {
+        delete[] grid_array;
+    }
 
     void destroy()
     {
@@ -96,7 +149,12 @@ class grid
     }
     void resize(unsigned w, unsigned h)
     {
-        t *new_grid_array = new t[w * h];
+        if (h != 0 &&
+            static_cast<size_t>(w) >
+                std::numeric_limits<size_t>::max() / h)
+            throw std::bad_array_new_length();
+
+        t *new_grid_array = new t[static_cast<size_t>(w) * h];
         const unsigned int wm = minv(xgrid, w), hm = minv(ygrid, h);
         for (unsigned i = 0; i < hm; i++)
             for (unsigned ii = 0; ii < wm; ii++)
@@ -122,13 +180,21 @@ class grid
             static_cast<size_t>(copy_id.ygrid) * copy_id.xgrid;
         t *new_array = new t[count];
 
+        try {
+            for (unsigned i = 0; i < copy_id.ygrid; i++)
+                for (unsigned ii = 0; ii < copy_id.xgrid; ii++)
+                    new_array[static_cast<size_t>(i) * copy_id.xgrid + ii] =
+                        copy_id.grid_array[static_cast<size_t>(i) *
+                                           copy_id.xgrid + ii];
+        } catch (...) {
+            delete[] new_array;
+            throw;
+        }
+
         delete[] grid_array;
         grid_array = new_array;
         xgrid = copy_id.xgrid;
         ygrid = copy_id.ygrid;
-        for (unsigned i = 0; i < ygrid; i++)
-            for (unsigned ii = 0; ii < xgrid; ii++)
-                grid_array[i * xgrid + ii] = copy_id.grid_array[i * copy_id.xgrid + ii];
     }
     unsigned int width()
     {
@@ -155,23 +221,23 @@ class grid
     }
     void insert_region(const unsigned int x1, const unsigned int y1, unsigned int x2, const unsigned int y2, const t val)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       if (xd > 0 && yd > 0)
-       {
-       const unsigned int tx1 = minv(x1, x2);
-       const unsigned int ty1 = minv(y1, y2);
-       const unsigned int tx2 = maxv(x1, x2);
-       const unsigned int ty2 = maxv(y1, y2);
+        const unsigned int tx1 = minv(x1, x2);
+        const unsigned int ty1 = minv(y1, y2);
+        const unsigned int tx2 = maxv(x1, x2);
+        const unsigned int ty2 = maxv(y1, y2);
 
-       if (tx1 >= xgrid || ty1 >= ygrid)
-           return;
+        if (xgrid == 0 || ygrid == 0 ||
+            tx1 >= xgrid || ty1 >= ygrid)
+            return;
 
-       const unsigned int px2 = tx2 >= xgrid - 1 ? xgrid : tx2 + 1;
-       const unsigned int py2 = ty2 >= ygrid - 1 ? ygrid : ty2 + 1;
+        const unsigned int px2 =
+            tx2 >= xgrid - 1 ? xgrid : tx2 + 1;
+        const unsigned int py2 =
+            ty2 >= ygrid - 1 ? ygrid : ty2 + 1;
 
-       for (unsigned int i = ty1; i < py2; i++)
-           for (unsigned int ii = tx1; ii < px2; ii++)
-                   grid_array[i * xgrid + ii] = val;
+        for (unsigned int i = ty1; i < py2; i++)
+            for (unsigned int ii = tx1; ii < px2; ii++)
+                grid_array[static_cast<size_t>(i) * xgrid + ii] = val;
     }
     void add_region(const unsigned int x1, const unsigned int y1, unsigned int x2, const unsigned int y2, const t val)
     {
@@ -209,330 +275,480 @@ class grid
     }
     void insert_disk(const double x, const double y, const double r, const t val)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
-                        grid_array[i * xgrid + ii] = val;
-        }
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return;
+
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r)
+                    grid_array[i * static_cast<size_t>(xgrid) + ii] = val;
     }
     void add_disk(const double x, const double y, const double r, const t val)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
-                        grid_array[i * xgrid + ii] += val;
-        }
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return;
+
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r)
+                    grid_array[i * static_cast<size_t>(xgrid) + ii] += val;
     }
     void multiply_disk(const double x, const double y, const double r, const double val)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
-                        grid_array[i * xgrid + ii] *= val;
-        }
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return;
+
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r)
+                    grid_array[i * static_cast<size_t>(xgrid) + ii] *= val;
     }
     void insert_grid_region(const grid& source_id, const unsigned int sx1, const unsigned int sy1, const unsigned int sx2, const unsigned int sy2, const unsigned int x, const unsigned int y)
     {
-        if (x < xgrid && y < ygrid)
+        if (grid_array == nullptr || source_id.grid_array == nullptr)
+            return;
+
+        if (x >= xgrid || y >= ygrid ||
+            source_id.xgrid == 0 || source_id.ygrid == 0)
+            return;
+
+        const unsigned int tx1 = minv(sx1, sx2);
+        const unsigned int ty1 = minv(sy1, sy2);
+        const unsigned int tx2 =
+            minv(maxv(sx1, sx2), source_id.xgrid - 1);
+        const unsigned int ty2 =
+            minv(maxv(sy1, sy2), source_id.ygrid - 1);
+
+        if (tx1 >= source_id.xgrid || ty1 >= source_id.ygrid ||
+            tx1 > tx2 || ty1 > ty2)
+            return;
+
+        const size_t copy_width = static_cast<size_t>(tx2) - tx1 + 1;
+        const size_t copy_height = static_cast<size_t>(ty2) - ty1 + 1;
+        const size_t width = minv(copy_width, static_cast<size_t>(xgrid) - x);
+        const size_t height = minv(copy_height, static_cast<size_t>(ygrid) - y);
+
+        if (width == 0 || height == 0)
+            return;
+
+        if (height > std::numeric_limits<size_t>::max() / width)
+           throw std::bad_array_new_length();
+
+        const t* source_data = source_id.grid_array;
+        size_t source_stride = source_id.xgrid;
+        size_t source_offset = static_cast<size_t>(ty1) * source_stride + tx1;
+        std::vector<t> snapshot;
+
+        if (&source_id == this)
         {
-            const int tx1 = minv(sx1, sx2),  ty1 = minv(sy1, sy2), tx2 = maxv(sx1, sx2), ty2 = maxv(sy1, sy2), xd = source_id.xgrid - tx1, yd = source_id.ygrid - ty1;
-            if (xd > 0 && yd > 0)
-            {
-                const int upx = minv(tx2 - tx1 + 1, minv(int(xgrid - x), xd)), upy = minv(ty2 - ty1 + 1, minv(int(ygrid - y), yd));
-                for (int i = 0; i < upy; i++)
-                    for (int ii = 0; ii < upx; ii++)
-                        grid_array[(y + i)*xgrid + (x + ii)] = source_id.grid_array[(ty1 + i)*source_id.xgrid + (tx1 + ii)];
-            }
+            snapshot.reserve(width * height);
+            for (size_t i = 0; i < height; ++i)
+                for (size_t ii = 0; ii < width; ++ii)
+                    snapshot.push_back(
+                        source_data[source_offset + i * source_stride + ii]);
+
+            source_data = snapshot.data();
+            source_stride = width;
+            source_offset = 0;
         }
+
+        for (size_t i = 0; i < height; ++i)
+            for (size_t ii = 0; ii < width; ++ii)
+                grid_array[(static_cast<size_t>(y) + i) * xgrid +
+                           static_cast<size_t>(x) + ii] =
+                    source_data[source_offset + i * source_stride + ii];
     }
     void add_grid_region(const grid& source_id, const unsigned int sx1, const unsigned int sy1, const unsigned int sx2, const unsigned int sy2, const unsigned int x, const unsigned int y)
     {
-        if (x < xgrid && y < ygrid)
+        if (grid_array == nullptr || source_id.grid_array == nullptr ||
+            x >= xgrid || y >= ygrid ||
+            source_id.xgrid == 0 || source_id.ygrid == 0)
+            return;
+
+        const unsigned int tx1 = minv(sx1, sx2);
+        const unsigned int ty1 = minv(sy1, sy2);
+        const unsigned int tx2 = minv(maxv(sx1, sx2), source_id.xgrid - 1);
+        const unsigned int ty2 = minv(maxv(sy1, sy2), source_id.ygrid - 1);
+
+        if (tx1 > tx2 || ty1 > ty2 ||
+            tx1 >= source_id.xgrid || ty1 >= source_id.ygrid)
+            return;
+
+        const size_t width = minv(
+            static_cast<size_t>(tx2) - tx1 + 1,
+            static_cast<size_t>(xgrid) - x);
+        const size_t height = minv(
+            static_cast<size_t>(ty2) - ty1 + 1,
+            static_cast<size_t>(ygrid) - y);
+
+        if (width == 0 || height == 0)
+            return;
+
+        const t* source_data = source_id.grid_array;
+        size_t source_stride = source_id.xgrid;
+        size_t source_offset =
+            static_cast<size_t>(ty1) * source_stride + tx1;
+        std::vector<t> snapshot;
+
+        if (&source_id == this)
         {
-            const int tx1 = minv(sx1, sx2),  ty1 = minv(sy1, sy2), tx2 = maxv(sx1, sx2), ty2 = maxv(sy1, sy2), xd = source_id.xgrid - tx1, yd = source_id.ygrid - ty1;
-            if (xd > 0 && yd > 0)
-            {
-                const int upx = minv(tx2 - tx1 + 1, minv(int(xgrid - x), xd)), upy = minv(ty2 - ty1 + 1, minv(int(ygrid - y), yd));
-                for (int i = 0; i < upy; i++)
-                    for (int ii = 0; ii < upx; ii++)
-                        grid_array[(y + i)*xgrid + (x + ii)] += source_id.grid_array[(ty1 + i)*source_id.xgrid + (tx1 + ii)];
-            }
+            if (height > std::numeric_limits<size_t>::max() / width)
+                throw std::bad_array_new_length();
+            snapshot.reserve(width * height);
+            for (size_t i = 0; i < height; ++i)
+                for (size_t ii = 0; ii < width; ++ii)
+                    snapshot.push_back(
+                        source_data[source_offset + i * source_stride + ii]);
+            source_data = snapshot.data();
+            source_stride = width;
+            source_offset = 0;
         }
+
+        for (size_t i = 0; i < height; ++i)
+            for (size_t ii = 0; ii < width; ++ii)
+                grid_array[(static_cast<size_t>(y) + i) * xgrid +
+                           static_cast<size_t>(x) + ii] +=
+                    source_data[source_offset + i * source_stride + ii];
     }
     void multiply_grid_region(const grid& source_id, const unsigned int sx1, const unsigned int sy1, const unsigned int sx2, const unsigned int sy2, const unsigned int x, const unsigned int y)
     {
-        if (x < xgrid && y < ygrid)
+        if (grid_array == nullptr || source_id.grid_array == nullptr ||
+            x >= xgrid || y >= ygrid ||
+            source_id.xgrid == 0 || source_id.ygrid == 0)
+            return;
+
+        const unsigned int tx1 = minv(sx1, sx2);
+        const unsigned int ty1 = minv(sy1, sy2);
+        const unsigned int tx2 = minv(maxv(sx1, sx2), source_id.xgrid - 1);
+        const unsigned int ty2 = minv(maxv(sy1, sy2), source_id.ygrid - 1);
+
+        if (tx1 > tx2 || ty1 > ty2 ||
+            tx1 >= source_id.xgrid || ty1 >= source_id.ygrid)
+            return;
+
+        const size_t width = minv(
+            static_cast<size_t>(tx2) - tx1 + 1,
+            static_cast<size_t>(xgrid) - x);
+        const size_t height = minv(
+            static_cast<size_t>(ty2) - ty1 + 1,
+            static_cast<size_t>(ygrid) - y);
+
+        if (width == 0 || height == 0)
+            return;
+
+        const t* source_data = source_id.grid_array;
+        size_t source_stride = source_id.xgrid;
+        size_t source_offset =
+            static_cast<size_t>(ty1) * source_stride + tx1;
+        std::vector<t> snapshot;
+
+        if (&source_id == this)
         {
-            const int tx1 = minv(sx1, sx2),  ty1 = minv(sy1, sy2), tx2 = maxv(sx1, sx2), ty2 = maxv(sy1, sy2), xd = source_id.xgrid - tx1, yd = source_id.ygrid - ty1;
-            if (xd > 0 && yd > 0)
-            {
-                const int upx = minv(tx2 - tx1 + 1, minv(int(xgrid - x), xd)), upy = minv(ty2 - ty1 + 1, minv(int(ygrid - y), yd));
-                for (int i = 0; i < upy; i++)
-                    for (int ii = 0; ii < upx; ii++)
-                        grid_array[(y + i)*xgrid + (x + ii)] *= source_id.grid_array[(ty1 + i)*source_id.xgrid + (tx1 + ii)];
-            }
+            if (height > std::numeric_limits<size_t>::max() / width)
+                throw std::bad_array_new_length();
+            snapshot.reserve(width * height);
+            for (size_t i = 0; i < height; ++i)
+                for (size_t ii = 0; ii < width; ++ii)
+                    snapshot.push_back(
+                        source_data[source_offset + i * source_stride + ii]);
+            source_data = snapshot.data();
+            source_stride = width;
+            source_offset = 0;
         }
+
+        for (size_t i = 0; i < height; ++i)
+            for (size_t ii = 0; ii < width; ++ii)
+                grid_array[(static_cast<size_t>(y) + i) * xgrid +
+                           static_cast<size_t>(x) + ii] *=
+                    source_data[source_offset + i * source_stride + ii];
     }
 
     t find(unsigned int x, unsigned int y)
     {
-        return (grid_array[y * xgrid + x]);
+      if (grid_array == nullptr || x >= xgrid || y >= ygrid)
+          return t();
+
+      return grid_array[static_cast<size_t>(y) * xgrid + x];
     }
     t find_region_sum(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2)
     {
-       const unsigned int tx1 = minv(x1, x2);
-       const unsigned int ty1 = minv(y1, y2);
-       const unsigned int tx2 = maxv(x1, x2);
-       const unsigned int ty2 = maxv(y1, y2);
-       if (tx1 < xgrid && ty1 < ygrid)
-       {
-           const unsigned int px2 = tx2 >= xgrid - 1 ? xgrid : tx2 + 1;
-           const unsigned int py2 = ty2 >= ygrid - 1 ? ygrid : ty2 + 1;       
-           variant sum = 0;
-           for (unsigned int i = ty1; i < py2; i++)
-               for (unsigned int ii = tx1; ii < px2; ii++)
-                   sum += grid_array[i * xgrid + ii];
-           return sum;
-       }
-       return t();
+        if (grid_array == nullptr || xgrid == 0 || ygrid == 0) 
+            return t(); 
+ 
+        const unsigned int px1 = minv(x1, x2); 
+        const unsigned int py1 = minv(y1, y2); 
+        const unsigned int px2 = minv(maxv(x1, x2), xgrid - 1); 
+        const unsigned int py2 = minv(maxv(y1, y2), ygrid - 1); 
+ 
+        if (px1 >= xgrid || py1 >= ygrid || 
+            px1 > px2 || py1 > py2) 
+            return t(); 
+ 
+        variant sum = 0; 
+        for (size_t i = py1; i <= py2; ++i) 
+            for (size_t ii = px1; ii <= px2; ++ii) 
+                sum += grid_array[i * static_cast<size_t>(xgrid) + ii]; 
+ 
+        return sum; 
     }
     t find_region_max(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       t val_check;
-       if (xd > 0 && yd > 0)
-       {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
-           t max_check = grid_array[py1 * xgrid + px1];
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
-               {
-                   val_check = grid_array[i * xgrid + ii];
-                   if (val_check > max_check)
-                       max_check = val_check;
-               }
-           return max_check;
-       }
-       return t();
+        if (grid_array == nullptr || xgrid == 0 || ygrid == 0) 
+            return t(); 
+ 
+        const unsigned int px1 = minv(x1, x2); 
+        const unsigned int py1 = minv(y1, y2); 
+        const unsigned int px2 = minv(maxv(x1, x2), xgrid - 1); 
+        const unsigned int py2 = minv(maxv(y1, y2), ygrid - 1); 
+ 
+        if (px1 >= xgrid || py1 >= ygrid || 
+            px1 > px2 || py1 > py2) 
+            return t(); 
+
+        t max_check = grid_array[static_cast<size_t>(py1) * xgrid + px1]; 
+ 
+        for (size_t i = py1; i <= py2; ++i) 
+            for (size_t ii = px1; ii <= px2; ++ii) 
+            { 
+                const t value = 
+                    grid_array[i * static_cast<size_t>(xgrid) + ii]; 
+                if (value > max_check) 
+                    max_check = value; 
+            } 
+ 
+        return max_check; 
     }
     t find_region_min(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       t val_check;
-       if (xd > 0 && yd > 0)
-       {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
-           t min_check = grid_array[py1 * xgrid + px1];
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
-               {
-                   val_check = grid_array[i * xgrid + ii];
-                   if (val_check < min_check)
-                       min_check = val_check;
-               }
-           return min_check;
-       }
-       return t();
+        if (grid_array == nullptr || xgrid == 0 || ygrid == 0) 
+            return t(); 
+ 
+        const unsigned int px1 = minv(x1, x2); 
+        const unsigned int py1 = minv(y1, y2); 
+        const unsigned int px2 = minv(maxv(x1, x2), xgrid - 1); 
+        const unsigned int py2 = minv(maxv(y1, y2), ygrid - 1); 
+ 
+        if (px1 >= xgrid || py1 >= ygrid || 
+            px1 > px2 || py1 > py2) 
+            return t(); 
+ 
+        t min_check = grid_array[static_cast<size_t>(py1) * xgrid + px1]; 
+ 
+        for (size_t i = py1; i <= py2; ++i) 
+            for (size_t ii = px1; ii <= px2; ++ii) 
+            { 
+                const t value = 
+                    grid_array[i * static_cast<size_t>(xgrid) + ii]; 
+                if (value < min_check) 
+                    min_check = value; 
+            } 
+ 
+        return min_check; 
     }
     t find_region_mean(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       if (xd > 0 && yd > 0)
-       {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
-           t sum = 0;
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
-                   sum += grid_array[i * xgrid + ii];
-           const double region_size = (py2 - py1)*(px2 - px1);
-           return sum/region_size;
-       }
-       return t();
+        if (grid_array == nullptr || xgrid == 0 || ygrid == 0) 
+
+           return t(); 
+ 
+        const unsigned int px1 = minv(x1, x2); 
+        const unsigned int py1 = minv(y1, y2); 
+        const unsigned int px2 = minv(maxv(x1, x2), xgrid - 1); 
+        const unsigned int py2 = minv(maxv(y1, y2), ygrid - 1); 
+ 
+        if (px1 >= xgrid || py1 >= ygrid || 
+            px1 > px2 || py1 > py2) 
+            return t(); 
+ 
+        t sum = t(); 
+        size_t region_size = 0; 
+ 
+        for (size_t i = py1; i <= py2; ++i) 
+            for (size_t ii = px1; ii <= px2; ++ii) 
+            { 
+                sum += grid_array[i * static_cast<size_t>(xgrid) + ii]; 
+                ++region_size; 
+            } 
+ 
+        if (region_size == 0) 
+            return t(); 
+ 
+        return sum / static_cast<double>(region_size); 
     }
     t find_disk_sum(const double x, const double y, const double r)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            t sum = t();
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
-                        sum += grid_array[i * xgrid + ii];
-            return sum;
-        }
-        return t();
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return t();
+
+        variant sum = 0;
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r)
+                    sum += grid_array[i * static_cast<size_t>(xgrid) + ii];
+        return sum;
     }
     t find_disk_max(const double x, const double y, const double r)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            bool found = false;
-            t max_check = t();
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return t();
+
+        bool found = false;
+        t max_check = t();
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r)
+                {
+                    const t value =
+                        grid_array[i * static_cast<size_t>(xgrid) + ii];
+                    if (!found || value > max_check)
                     {
-                        const double val_check = grid_array[i * xgrid + ii];
-                         if (!found || val_check > max_check)
-                         {
-                             max_check = val_check;
-                             found = true;
-                         }
+                        max_check = value;
+                        found = true;
                     }
-            return found ? max_check : t();
-        }
-        return t();
+                }
+        return found ? max_check : t();
     }
     t find_disk_min(const double x, const double y, const double r)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-             bool found = false;
-             t min_check = t();
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return t();
+
+        bool found = false;
+        t min_check = t();
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r)
+                {
+                    const t value =
+                        grid_array[i * static_cast<size_t>(xgrid) + ii];
+                    if (!found || value < min_check)
                     {
-                        const double val_check = grid_array[i * xgrid + ii];
-                        if (!found || val_check < min_check)
-                        {
-                            min_check = val_check;
-                            found = true;
-                        }
+                        min_check = value;
+                        found = true;
                     }
-            return found ? min_check : t();
-        }
-        return t();
+                }
+        return found ? min_check : t();
     }
     t find_disk_mean(const double x, const double y, const double r)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            t sum = t();
-            double region_size = 0;
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
-                    {
-                        sum += grid_array[i * xgrid + ii];
-                        ++region_size;
-                    }
-           if (region_size == 0)
-               return t();
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return t();
 
-           return sum/region_size;
-        }
-        return t();
+        variant sum = 0;
+        size_t region_size = 0;
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r)
+                {
+                    sum += grid_array[i * static_cast<size_t>(xgrid) + ii];
+                    ++region_size;
+                }
+
+        if (region_size == 0)
+            return t();
+        return sum / static_cast<double>(region_size);
     }
     bool value_region_exists(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2, const t val)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       if (xd > 0 && yd > 0)
-       {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
-                   if (tequal(grid_array[i * xgrid + ii], val))
-                       return true;
-       }
-       return false;
+        grid_region_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_region_bounds(x1, y1, x2, y2, xgrid, ygrid, bounds))
+            return false;
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (tequal(grid_array[i * static_cast<size_t>(xgrid) + ii], val))
+                    return true;
+        return false;
     }
     int value_region_x(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2, const t val)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       if (xd > 0 && yd > 0)
-       {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
-                   if (tequal(grid_array[i * xgrid + ii], val))
-                      return ii;
-       }
-       return 0;
+        grid_region_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_region_bounds(x1, y1, x2, y2, xgrid, ygrid, bounds))
+            return 0;
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (tequal(grid_array[i * static_cast<size_t>(xgrid) + ii], val))
+                    return ii <= static_cast<size_t>(std::numeric_limits<int>::max())
+                        ? static_cast<int>(ii) : 0;
+        return 0;
     }
     int value_region_y(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2, const t val)
     {
-       const int tx1 = minv(x1, x2),  ty1 = minv(y1, y2), tx2 = maxv(x1, x2), ty2 = maxv(y1, y2), xd = xgrid - tx1, yd = ygrid - ty1;
-       if (xd > 0 && yd > 0)
-       {
-           const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2 + 1, (int)xgrid), py2 = minv(ty2 + 1, (int)ygrid);
-           for (int i = py1; i < py2; i++)
-               for (int ii = px1; ii < px2; ii++)
-                   if (tequal(grid_array[i * xgrid + ii], val))
-                       return i;
-       }
-       return 0;
+        grid_region_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_region_bounds(x1, y1, x2, y2, xgrid, ygrid, bounds))
+            return 0;
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (tequal(grid_array[i * static_cast<size_t>(xgrid) + ii], val))
+                    return i <= static_cast<size_t>(std::numeric_limits<int>::max())
+                        ? static_cast<int>(i) : 0;
+        return 0;
     }
     bool value_disk_exists(const double x, const double y, const double r, const t val)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
-                        if (tequal(grid_array[i * xgrid + ii], val))
-                            return true;
-        }
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return false;
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r &&
+                    tequal(grid_array[i * static_cast<size_t>(xgrid) + ii], val))
+                    return true;
         return false;
     }
     int value_disk_x(const double x, const double y, const double r, const t val)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
-                        if (tequal(grid_array[i * xgrid + ii], val))
-                            return ii;
-        }
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return 0;
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r &&
+                    tequal(grid_array[i * static_cast<size_t>(xgrid) + ii], val))
+                    return ii <= static_cast<size_t>(std::numeric_limits<int>::max())
+                        ? static_cast<int>(ii) : 0;
         return 0;
     }
     int value_disk_y(const double x, const double y, const double r, const t val)
     {
-        const double rr = r*r;
-        const int tx1 = int(x - r), ty1 = int(y - r), tx2 = int(x + r + 1), ty2 = int(y + r + 1);
-        if (tx2 >= 0 && ty2 >=0 && tx1 < int(xgrid) && ty1 < int(ygrid))
-        {
-            const int px1 = maxv(tx1, 0), py1 = maxv(ty1, 0), px2 = minv(tx2, (int)xgrid), py2 = minv(ty2, (int)ygrid);
-            for (int i = py1; i < py2; i++)
-                for (int ii = px1; ii < px2; ii++)
-                    if ((x - ii)*(x - ii) + (y - i)*(y - i) <= rr)
-                        if (tequal(grid_array[i * xgrid + ii], val))
-                            return i;
-        }
+        grid_disk_bounds bounds;
+        if (grid_array == nullptr ||
+            !calculate_disk_bounds(x, y, r, xgrid, ygrid, bounds))
+            return 0;
+        for (size_t i = bounds.y1; i < bounds.y2; ++i)
+            for (size_t ii = bounds.x1; ii < bounds.x2; ++ii)
+                if (std::hypot(x - static_cast<double>(ii),
+                               y - static_cast<double>(i)) <= r &&
+                    tequal(grid_array[i * static_cast<size_t>(xgrid) + ii], val))
+                    return i <= static_cast<size_t>(std::numeric_limits<int>::max())
+                        ? static_cast<int>(i) : 0;
         return 0;
     }
     void shuffle()
