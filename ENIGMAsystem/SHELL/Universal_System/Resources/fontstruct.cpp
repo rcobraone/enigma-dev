@@ -85,14 +85,16 @@ namespace enigma
         fontglyph fg;
         unsigned fw, fh;
         unsigned char* data = graphics_copy_texture_pixels(sspr.GetTexture(i), &fw, &fh);
+        glyphdata[i] = data;
+        
         if (!data) {
           DEBUG_MESSAGE("Failed to copy sprite glyph texture.", MESSAGE_TYPE::M_ERROR);
           free_glyphdata();
           return false;
         }
+        
         const auto texture_rect = sspr.GetTextureRect(i);
-        if (data == nullptr ||
-            texture_rect.w == 0 ||
+        if (texture_rect.w == 0 ||
             texture_rect.h == 0 ||
             fw == 0 ||
             fh == 0) {
@@ -105,7 +107,6 @@ namespace enigma
         //NTOE2: The commented out code was actually wrong - the width was divided by y instead of x. That is why it only worked with power of two.
         gtw = int((double)sspr.width / texture_rect.w);
         //gtw = fw;
-        glyphdata[i] = data;
 
         // Here we calculate the bbox
         if (!prop)
