@@ -45,6 +45,11 @@ namespace enigma
     public:
     temp_event_scope(object_basic*);
     ~temp_event_scope();
+
+    temp_event_scope(const temp_event_scope&) = delete;
+    temp_event_scope& operator=(const temp_event_scope&) = delete;
+    temp_event_scope(temp_event_scope&&) = delete;
+    temp_event_scope& operator=(temp_event_scope&&) = delete;
   };
 
   // This structure is for composing lists of events to execute.
@@ -81,7 +86,7 @@ namespace enigma
 
   // Stack pusher for iterators in use by with() statements and the like.
   struct iterator_level {
-    inst_iter* stored_it;
+    inst_iter* stored_it;   
     object_basic* stored_other;
     iterator_level(inst_iter* push_to, object_basic* push_other):
         stored_it(instance_event_iterator), stored_other(instance_other) {
@@ -97,6 +102,11 @@ namespace enigma
       instance_event_iterator = stored_it;
       instance_other = stored_other;
     }
+
+    iterator_level(const iterator_level&) = delete;
+    iterator_level& operator=(const iterator_level&) = delete;
+    iterator_level(iterator_level&&) = delete;
+    iterator_level& operator=(iterator_level&&) = delete;    
   };
 
   object_basic* fetch_instance_by_int(int x);
