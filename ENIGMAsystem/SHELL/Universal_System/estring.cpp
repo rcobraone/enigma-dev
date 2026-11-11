@@ -130,6 +130,7 @@ bool is_base64(unsigned char c) {
 }
 
 string base64_encode(string const& str) {
+  string ret;
   const size_t groups = str.size() / 3;
   const size_t remainder = str.size() % 3;
 
@@ -168,6 +169,7 @@ string base64_encode(string const& str) {
 }
 
 string base64_decode(string const& str) {
+  string ret;
   if (str.empty())
     return ret;
 
@@ -320,8 +322,6 @@ static bool count_utf8_codepoints(
 }
 
 size_t string_length_utf8(string str) {
-  if (!str)
-    return 0;
     
   size_t result = 0;
   if (!count_utf8_codepoints(str.data(), str.size(), result))
@@ -330,8 +330,7 @@ size_t string_length_utf8(string str) {
 }
 
 size_t string_length_utf8(const char* str) {
-  if (!str)
-    return 0;
+	
   if (str == nullptr)
     return 0;
 
@@ -563,8 +562,13 @@ string filename_path(string fname)
 
 string filename_dir(string fname)
 {
-+  if (fname.size() < 2)
+  if (fname.size() < 2)
     return "";
+
+  const size_t fp = fname.find_last_of("/\\");
+  if (fp == string::npos)
+    return "";
+   
   return fname.substr(0, fp);
 }
 
