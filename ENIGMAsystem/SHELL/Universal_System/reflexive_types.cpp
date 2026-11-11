@@ -41,7 +41,7 @@ namespace enigma {
   }
   const double angle = rval.d * kPi / 180.0;
   const double new_hspd = *spd * std::cos(angle);
-  const double new_vspd = -*spd * std::sin(angle);+
+  const double new_vspd = -*spd * std::sin(angle);
   if (!std::isfinite(new_hspd) || !std::isfinite(new_vspd)) {
     return;
   }
