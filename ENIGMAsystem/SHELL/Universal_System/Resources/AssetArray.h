@@ -21,6 +21,7 @@
 #include <vector>
 #include <string>
 #include <utility>
+#include <limits>
 
 #ifdef DEBUG_MODE
   #include "Widget_Systems/widgets_mandatory.h" // for DEBUG_MESSAGE
@@ -54,12 +55,12 @@ class OffsetVector {
   }
   T *data() { return data_owner_.data(); }
   const T *data() const { return data_owner_.data(); }
-  template<typename... U> size_t push_back(U... args) {
-    data_owner_.push_back(args...);
+  template<typename... U> size_t push_back(U&&... args) {
+    data_owner_.push_back(std::forward<U>(args)...);
     return size() - 1;
   }
-  template<typename... U> size_t emplace_back(U... args) {
-    data_owner_.emplace_back(std::move(args)...);
+  template<typename... U> size_t emplace_back(U&&... args) {
+    data_owner_.emplace_back(std::forward<U>(args)...);
     return size() - 1;
   }
   template<typename ind_t> T& operator[](ind_t index) {
@@ -83,12 +84,12 @@ template<typename T> class OffsetVector<T, 0> {
   }
   T *data() { return data_owner_.data(); }
   const T *data() const { return data_owner_.data(); }
-  template<typename... U> size_t push_back(U... args) {
-    data_owner_.push_back(args...);
+  template<typename... U> size_t push_back(U&&... args) {
+    data_owner_.push_back(std::forward<U>(args)...);
     return data_owner_.size() - 1;
   }
-  template<typename... U> size_t emplace_back(U... args) {
-    data_owner_.emplace_back(std::move(args)...);
+  template<typename... U> size_t emplace_back(U&&... args) {
+    data_owner_.emplace_back(std::forward<U>(args)...);
     return size() - 1;
   }
   template<typename ind_t> T& operator[](ind_t index) {
@@ -129,9 +130,12 @@ class AssetArray {
   iterator end() { return iterator(*this, size()); }
 
   int add(T&& asset) {
-    size_t id = size();
+    const size_t id = size();
+    if (id > static_cast<size_t>(std::numeric_limits<int>::max()))
+      return -1;
+
     assets_.emplace_back(std::move(asset));
-    return (int)id;
+    return static_cast<int>(id);
   }
 
   int assign(int id, T&& asset) {
@@ -140,13 +144,7 @@ class AssetArray {
     }	  
     if (exists(id)) assets_[id].destroy();
     else {
-     if (id < 0) {
-#ifdef DEBUG_MODE
-      DEBUG_MESSAGE("Attempting to assign " + (std::string)T::getAssetTypeName() + " asset " + std::to_string(id) + " to negative index.", MESSAGE_TYPE::M_USER_ERROR);
-#endif
-      return id;
-    }
-     
+    
       if (size_t(id) >= size()) assets_.resize(size_t(id) + 1);
     }
     assets_[id] = std::move(asset);
