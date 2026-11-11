@@ -27,6 +27,7 @@
 #include <string>
 #include <limits>
 #include <cstring>
+#include <memory>
 
 using enigma::Sprite;
 using enigma::sprites;
@@ -189,7 +190,7 @@ bool sprite_replace(int ind, std::string filename, int imgnumb, bool precise, bo
     sprites.get(ind).FreeTextures();
   }
 
-  return sprites.replace(ind, std::move(replacement)) != -1;;
+  return sprites.replace(ind, std::move(replacement)) != -1;
 }
 
 bool sprite_replace(int ind, std::string filename, int imgnumb, bool transparent, bool smooth, int x_offset, int y_offset,
@@ -310,12 +311,16 @@ void sprite_save(int ind, unsigned subimg, std::string fname) {
   }
   
   unsigned w, h;
-  unsigned char* rgbdata =
-      enigma::graphics_copy_texture_pixels(spr.GetSubimage(subimg).textureID, &w, &h);
+  std::unique_ptr<unsigned char[]> rgbdata(
+      enigma::graphics_copy_texture_pixels(
+          spr.GetSubimage(subimg).textureID, &w, &h));
+  if (!rgbdata || w == 0 || h == 0) {
+    DEBUG_MESSAGE("ERROR - Unable to read sprite texture pixels.",
+                  MESSAGE_TYPE::M_USER_ERROR);
+    return;
+  }
 
-  enigma::image_save(fname, rgbdata, spr.width, spr.height, w, h, false);
-
-  delete[] rgbdata;
+  enigma::image_save(fname, rgbdata.get(), w, h, w, h, false);
 }
 
 //void sprite_set_precise(int ind, bool precise); //FIXME: We don't support this yet
