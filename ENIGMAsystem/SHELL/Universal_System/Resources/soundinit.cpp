@@ -26,6 +26,7 @@
 #include <cstring>
 #include <new>
 #include <vector>
+#include <stdexcept>
 
 namespace enigma_user {
   void sound_play(int sound);
