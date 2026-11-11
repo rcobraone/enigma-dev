@@ -45,6 +45,15 @@ namespace enigma
       static inline int DEBUG_ID_CHECK(int id, int objind) {
         std::map<int, inst_iter*>::iterator it = instance_list.find(id);
         if (it != instance_list.end()) {
+          if (it->second == nullptr || it->second->inst == nullptr) {
+            DEBUG_MESSAGE(
+            "Duplicate instance ID encountered, but the existing instance "
+            "iterator is invalid. Assigning a new ID.",
+              MESSAGE_TYPE::M_ERROR);
+
+            return maxid++;
+    }
+			
           DEBUG_MESSAGE("Two instances were given the same ID! Object `" + enigma_user::object_get_name(it->second->inst->object_index)
                      + "' and new object `" + enigma_user::object_get_name(objind)
                      + "' both have ID " + toString(id)
@@ -84,14 +93,22 @@ namespace enigma
     void objectdata_load()
     {
         objectdata.resize(object_idmax);
-        for (int i = 0; i < objectcount; i++) {
+
+        const size_t count = objectcount > 0
+            ? (objs.size() < static_cast<size_t>(objectcount)
+                ? objs.size()
+                : static_cast<size_t>(objectcount))
+            : 0;
+
+        for (size_t i = 0; i < count; ++i) {
             const int id = objs[i].id;
             if (id < 0 || static_cast<size_t>(id) >= object_idmax)
                 continue;
 
-        objectdata[id] = &objs[i];
+            objectdata[id] = &objs[i];
+        }
     }
-}
+
 
 #if DEBUG_MODE
   #define errcheck(objid,err) \
