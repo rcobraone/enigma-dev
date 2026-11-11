@@ -44,8 +44,9 @@ namespace enigma
 	  
     //Find the next instant (it may be right now).
     //Note: If a map lookup each tick is a performance hit, this value can be cached in the object itself with a tuple <timeline_id, timeline_pos, next_moment_iterator>
-    if (timeline_index < 0 ||
-        static_cast<size_t>(timeline_index) >= timeline_moments_maps.size()) { return; }
+    const int active_timeline = timeline_index;
+    if (active_timeline < 0 ||
+        static_cast<size_t>(active_timeline) >= timeline_moments_maps.size()) { return; }
     if (timeline_speed == 0)
      return;
     //Algorithm varies for +/- speed. Assume zero is positive (just for consistency).
@@ -55,7 +56,7 @@ namespace enigma
 
       std::vector<int> moment_ids;
       if (speed>=0) { //Positive
-      std::map<int, int>::const_iterator next = timeline_moments_maps[timeline_index].lower_bound(ceil(timeline_position));
+      std::map<int, int>::const_iterator next = timeline_moments_maps[active_timeline].lower_bound(ceil(timeline_position));
 
       //We now advance the timeline_position by timeline_speed, saving event information on the way.
       while (remaining!=0) {
@@ -70,7 +71,7 @@ namespace enigma
       }
     } else { //Negative
       //This will put us one ahead. The reverse_iterator will reverse it.
-      std::map<int, int>::const_iterator nextTEMP = timeline_moments_maps[timeline_index].upper_bound(floor(timeline_position));
+      std::map<int, int>::const_iterator nextTEMP = timeline_moments_maps[active_timeline].upper_bound(floor(timeline_position));
       std::map<int, int>::const_reverse_iterator next = std::reverse_iterator<std::map<int, int>::const_iterator>(nextTEMP);
 
       //The algorithm proceeds as in FWD, but with rev_iterators (so it's hard to share code).
@@ -88,7 +89,7 @@ namespace enigma
 
     //Now, trigger each moment that we've passed.
     for (std::vector<int>::iterator it=moment_ids.begin(); it!=moment_ids.end(); it++) {
-      timeline_call_moment_script(timeline_index, *it);
+      timeline_call_moment_script(active_timeline, *it);
     }
   }
 
