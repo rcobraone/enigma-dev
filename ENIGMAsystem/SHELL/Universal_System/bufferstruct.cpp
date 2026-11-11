@@ -49,7 +49,16 @@ BinaryBuffer::BinaryBuffer(unsigned size) {
 unsigned BinaryBuffer::GetSize() { return data.size(); }
 
 void BinaryBuffer::Resize(unsigned size) {
-  data.resize(size, 0);
+  if (static_cast<size_t>(size) > data.max_size())
+    return;
+
+  try {
+    data.resize(size, 0);
+  } catch (const std::bad_alloc&) {
+    return;
+  } catch (const std::length_error&) {
+    return;
+  }
 
   if (position > size)
     position = size;
@@ -68,7 +77,17 @@ void BinaryBuffer::Seek(unsigned offset) {
       if (offset >= buffer_size) {
         if (offset == std::numeric_limits<unsigned>::max())
           return;
-        Resize(offset + 1);
+        const unsigned required_size = offset + 1;
+        if (static_cast<size_t>(required_size) > data.max_size())
+          return;
+
+        try {
+          data.resize(required_size, 0);
+        } catch (const std::bad_alloc&) {
+          return;
+        } catch (const std::length_error&) {
+          return;
+        }
       }
       position = offset;
       return;
@@ -102,10 +121,17 @@ unsigned char BinaryBuffer::ReadByte() {
     if (static_cast<size_t>(position) >= buffer_size) {
       const size_t required_size = static_cast<size_t>(position) + 1;
 
-      if (required_size > data.max_size())
+      if (required_size > data.max_size() ||
+          required_size > std::numeric_limits<unsigned>::max())
         return 0;
 
-      data.resize(required_size, 0);
+      try {
+        data.resize(required_size, 0);
+      } catch (const std::bad_alloc&) {
+        return 0;
+      } catch (const std::length_error&) {
+        return 0;
+      }
     }
   } else if (static_cast<size_t>(position) >= buffer_size) {
     return 0;
@@ -143,8 +169,15 @@ void BinaryBuffer::WriteByte(unsigned char byte) {
         required_size > std::numeric_limits<unsigned>::max())
       return;
 
-    if (required_size > buffer_size)
-      data.resize(required_size, 0);
+    if (required_size > buffer_size) {
+      try {
+        data.resize(required_size, 0);
+      } catch (const std::bad_alloc&) {
+        return;
+      } catch (const std::length_error&) {
+        return;
+      }
+    }
 
     data[index] = byte;
     ++position;
@@ -196,19 +229,30 @@ int buffer_create(unsigned size, int type, unsigned alignment) {
   if (id < 0)
     return -1; 
 
-  std::unique_ptr<enigma::BinaryBuffer> buffer(
-      new enigma::BinaryBuffer(size));
-
+  std::unique_ptr<enigma::BinaryBuffer> buffer;
+  try {
+    buffer.reset(new enigma::BinaryBuffer(size));
+  } catch (const std::bad_alloc&) {
+    return -1;
+  } catch (const std::length_error&) {
+    return -1;
+  }
+  
   buffer->type = type;
   buffer->alignment = alignment;
-
   const size_t index = static_cast<size_t>(id);
 
   if (index < enigma::buffers.size()) {
     enigma::buffers[index] = buffer.get();
 
   } else {
-    enigma::buffers.push_back(buffer.get());
+    try {
+      enigma::buffers.push_back(buffer.get());
+    } catch (const std::bad_alloc&) {
+      return -1;
+    } catch (const std::length_error&) {
+      return -1;
+    }
   }
 
   buffer.release();
@@ -271,13 +315,13 @@ void buffer_copy(int src_buffer, unsigned src_offset, unsigned size,
     return;
 
   // Check arithmetic before allocating or modifying the destination.
+  size_t required_size = 0;
   if (dst_grow) {
     if (copy_size >
-        std::numeric_limits<size_t>::max() - destination_offset)
-
+        std::numeric_limits<size_t>::max() - destination_offset)       
       return;
 
-    const size_t required_size = destination_offset + copy_size;
+    required_size = destination_offset + copy_size;
 
     if (required_size > dstbuff->data.max_size() ||
         required_size > std::numeric_limits<unsigned>::max())
@@ -286,36 +330,59 @@ void buffer_copy(int src_buffer, unsigned src_offset, unsigned size,
 
   // Snapshot protects overlapping copies, including self-copy.
   std::vector<unsigned char> temp;
-  temp.reserve(copy_size);
+  if (copy_size > temp.max_size())
+    return;
+
+  try {
+    temp.resize(copy_size);
+  } catch (const std::bad_alloc&) {
+    return;
+  } catch (const std::length_error&) {
+    return;
+  }
 
   const size_t source_start = src_wrap
       ? source_offset % src_size
       : source_offset;
 
+  size_t source_index = source_start;
   for (size_t i = 0; i < copy_size; ++i) {
-    const size_t source_index =
-        src_wrap ? (source_start + i) % src_size
-                 : source_start + i;
-    temp.push_back(srcbuff->data[source_index]);
+    temp[i] = srcbuff->data[source_index];
+
+    if (src_wrap) {
+      ++source_index;
+      if (source_index == src_size)
+        source_index = 0;
+    } else {
+      ++source_index;
+    }
   }
 
   if (dst_wrap) {
-    const size_t destination_start = destination_offset % dst_size;
+   size_t destination_index = destination_offset % dst_size;
     
     for (size_t i = 0; i < copy_size; ++i) {
-      dstbuff->data[(destination_start + i) % dst_size] = temp[i];
-
+      dstbuff->data[destination_index] = temp[i];
+      ++destination_index;
+      if (destination_index == dst_size)
+        destination_index = 0;
     }
 
     return;
   }
 
   if (dst_grow) {
-    const size_t required_size = destination_offset + copy_size;
-
-    if (required_size > dstbuff->data.size())
-      dstbuff->data.resize(required_size, 0);
+    if (required_size > dstbuff->data.size()) {
+      try {
+        dstbuff->data.resize(required_size, 0);
+      } catch (const std::bad_alloc&) {
+        return;
+      } catch (const std::length_error&) {
+        return;
+      }
+    }
   }
+  
   const size_t writable = std::min(
       copy_size,
       dstbuff->data.size() - destination_offset
@@ -465,27 +532,36 @@ void buffer_save_ext(int buffer, string filename, unsigned offset,
 }
 
 int buffer_load(string filename) {
-  enigma::BinaryBuffer* buffer = new enigma::BinaryBuffer(0);
+  const int id = enigma::get_free_buffer();
+  if (id < 0)
+    return -1;
+
+  std::unique_ptr<enigma::BinaryBuffer> buffer;
+  try {
+    buffer.reset(new enigma::BinaryBuffer(0));
+  } catch (const std::bad_alloc&) {
+    return -1;
+  } catch (const std::length_error&) {
+    return -1;
+  }
+
   buffer->type = buffer_grow;
   buffer->alignment = 1;
-  int id = enigma::get_free_buffer();
-  std::ifstream myfile(filename.c_str(), std::ios::binary);
+
+  std::ifstream myfile(filename.c_str(), std::ios::binary); 
   if (!myfile.is_open()) {
     DEBUG_MESSAGE("Unable to open file " + filename, MESSAGE_TYPE::M_ERROR);
-    delete buffer;
     return -1;
   }
   myfile.seekg(0, std::ios::end);
   if (!myfile) {
     myfile.close();
-    delete buffer;
     return -1;
   }
 
   const std::streampos file_position = myfile.tellg();
   if (file_position == std::streampos(-1)) {
     myfile.close();
-    delete buffer;
     return -1;
   }
 
@@ -500,7 +576,6 @@ int buffer_load(string filename) {
           static_cast<std::uintmax_t>(
               std::numeric_limits<std::streamsize>::max())) {
     myfile.close();
-    delete buffer;
     return -1;
   }
 
@@ -508,53 +583,47 @@ int buffer_load(string filename) {
 
   if (size > buffer->data.max_size()) {
     myfile.close();
-    delete buffer;
     return -1;
   }
 
   try {
     buffer->data.resize(size);
   } catch (const std::bad_alloc&) {
-    myfile.close()
-    delete buffer;
+    myfile.close();
     return -1;
   } catch (const std::length_error&) {
     myfile.close();
-    delete buffer;
     return -1;
   }
 
    myfile.seekg(0, std::ios::beg);
   if (!myfile) {
     myfile.close();
-    delete buffer;
     return -1;
   }
 
-  myfile.seekg(0, std::ios::beg);
-  if (!myfile) {
-    myfile.close();
-    delete buffer;
-    return -1;
-  }
-  
   if (file_size > 0) {
     myfile.read(
         reinterpret_cast<char*>(buffer->data.data()),
         static_cast<std::streamsize>(file_size));
     if (!myfile) {
       myfile.close();
-      delete buffer;
       return -1;
     }
   }    
   myfile.close();
   if (static_cast<size_t>(id) < enigma::buffers.size()) {
-    enigma::buffers[id] = buffer;
-  } else {
-    enigma::buffers.push_back(buffer);
+    enigma::buffers[static_cast<size_t>(id)] = buffer.get();
+  } else {	  
+    try {
+      enigma::buffers.push_back(buffer.get());
+    } catch (const std::bad_alloc&) {
+      return -1;
+    } catch (const std::length_error&) {
+      return -1;
+    }
   }
-
+  buffer.release();
   return id;
 }
 
@@ -696,6 +765,7 @@ void buffer_load_ext(int buffer, string filename, unsigned offset) {
 
 void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned size) {
   get_buffer(binbuff, buffer);
+  
   if (size > std::numeric_limits<unsigned>::max() - offset)
     return;
 
@@ -711,22 +781,31 @@ void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned 
       return;
 
     const size_t required_size = start + count;
-    if (required_size > binbuff->data.max_size())
+    if (required_size > binbuff->data.max_size() ||
+        required_size > std::numeric_limits<unsigned>::max())
       return;
 
-    if (required_size > binbuff->data.size())
-      binbuff->data.resize(required_size, 0);
+    if (required_size > binbuff->data.size()) {
+      try {
+        binbuff->data.resize(required_size, 0);
+      } catch (const std::bad_alloc&) {
+        return;
+      } catch (const std::length_error&) {
+        return;
+      }
+    }
   }
 
   const size_t buffer_size = binbuff->data.size();
-  if (buffer_size == 0 || start >= buffer_size)
+  if (buffer_size == 0)
     return;
 
   size_t writable = count;
+  
   if (binbuff->type == buffer_wrap) {
-	  size_t index = start % buffer_size;
+	   size_t index = start % buffer_size;
+	   
     for (size_t i = 0; i < writable; ++i) {
-      const size_t index = (start + i) % buffer_size;
       binbuff->data[index] =
           static_cast<unsigned char>(value[i % type_size]);
           
@@ -734,10 +813,15 @@ void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned 
       if (index == buffer_size)
         index = 0;      
     }
+    
     return;
   }
-
+  
+  if (start >= buffer_size)
+    return;
+    
   writable = std::min(writable, buffer_size - start);
+  
   for (size_t i = 0; i < writable; ++i)
     binbuff->data[start + i] =
         static_cast<unsigned char>(value[i % type_size]);
@@ -942,17 +1026,22 @@ variant buffer_peek(int buffer, unsigned offset, int type) {
       ? buffer_size
       : buffer_size - start;
 
-  for (size_t i = 0; i < max_read; ++i) {
-    const unsigned char byte = binbuff->data[position]; 
+  try {
+    for (size_t i = 0; i < max_read; ++i) {
+      const unsigned char byte = binbuff->data[position]; 
 
     if (byte == 0)
       break; 
 
-    data.push_back(static_cast<char>(byte));
-
-    ++position;
-    if (position == buffer_size)
-      position = 0;
+      data.push_back(static_cast<char>(byte));
+      ++position;
+      if (position == buffer_size)
+        position = 0;
+    }
+  } catch (const std::bad_alloc&) {
+    return variant("");
+  } catch (const std::length_error&) {
+    return variant("");
   }
   
   return variant(data);
@@ -985,15 +1074,16 @@ variant buffer_read(int buffer, int type) {
         ? buffer_size
         : buffer_size - position;
 
+    size_t index = position;
     while (consumed < limit) {
-      const size_t index =
-          (position + consumed) % buffer_size;
-
       ++consumed;
 
       if (binbuff->data[index] == 0)
         break;
-
+        
+      ++index;
+      if (index == buffer_size)
+        index = 0;
     }
 
   } else {
@@ -1011,8 +1101,12 @@ variant buffer_read(int buffer, int type) {
 
   if (wrap) {
     const size_t advance = consumed % buffer_size;
+    const size_t remaining = buffer_size - position;
+    
     binbuff->position = static_cast<unsigned>(
-        (position + advance) % buffer_size
+        advance >= remaining
+            ? advance - remaining
+            : position + advance
     );
 
   } else {
@@ -1066,8 +1160,19 @@ void buffer_poke(int buffer, unsigned offset, int type, variant value) {
         return false;
 
       const size_t required_size = position + 1;
-      if (required_size > binbuff->data.size())
-        binbuff->data.resize(required_size, 0);
+      if (required_size > binbuff->data.size()) {
+        if (required_size > std::numeric_limits<unsigned>::max())
+          return false;
+
+        try {
+          binbuff->data.resize(required_size, 0);
+        } catch (const std::bad_alloc&) {
+          return false;
+        } catch (const std::length_error&) {
+          return false;
+        }
+      }
+
 
       binbuff->data[position] = byte;
       ++position;
@@ -1135,13 +1240,139 @@ string buffer_sha1(int buffer, unsigned offset, unsigned size) {
   return {};
 }
 
+namespace {
+
+ 
+
+bool decode_base64(const std::string& input,
+                   std::vector<unsigned char>& output) {
+  static const char alphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      "abcdefghijklmnopqrstuvwxyz"
+      "0123456789+/";
+
+  if (input.size() % 4 != 0)
+    return false;
+
+  const size_t groups = input.size() / 4;
+
+  if (groups > output.max_size() / 3)
+    return false;
+
+  output.clear();
+
+  try {
+    output.reserve(groups * 3);
+
+    for (size_t i = 0; i < input.size(); i += 4) {
+      unsigned int values[4] = {};
+      unsigned int padding = 0;
+
+      for (unsigned int j = 0; j < 4; ++j) {
+        const char c = input[i + j];
+
+        if (c == '=') {
+          if (j < 2)
+            return false;
+
+          ++padding;
+          continue;
+        }
+
+        if (padding != 0)
+          return false;
+
+        const char* found = std::strchr(alphabet, c);
+
+        if (!found)
+          return false;
+
+        values[j] =
+            static_cast<unsigned int>(found - alphabet);
+      }
+
+      if (padding > 2)
+        return false;
+
+      const bool last_group = i + 4 == input.size();
+
+      if (padding != 0 && !last_group)
+        return false;
+
+      if (padding == 1 && (values[2] & 0x03) != 0)
+        return false;
+
+      if (padding == 2 && (values[1] & 0x0F) != 0)
+        return false;
+
+      const unsigned int block =
+          (values[0] << 18) |
+          (values[1] << 12) |
+          (values[2] << 6) |
+          values[3];
+
+      output.push_back(
+          static_cast<unsigned char>((block >> 16) & 0xFF));
+
+      if (padding < 2) {
+        output.push_back(
+            static_cast<unsigned char>((block >> 8) & 0xFF));
+      }
+
+      if (padding == 0) {
+        output.push_back(
+            static_cast<unsigned char>(block & 0xFF));
+      }
+    }
+  } catch (const std::bad_alloc&) {
+    output.clear();
+    return false;
+
+  } catch (const std::length_error&) {
+    output.clear();
+    return false;
+  }
+
+  return true;
+}
+
+}  // namespace
+
+ 
+
 int buffer_base64_decode(string str) {
-  enigma::BinaryBuffer* buffer = new enigma::BinaryBuffer(0);
-  buffer->type = buffer_grow;
-  buffer->alignment = 1;
-  int id = enigma::get_free_buffer();
-  enigma::register_buffer(id, buffer);
-  //TODO: Write this function
+  std::vector<unsigned char> decoded;
+
+  if (!decode_base64(str, decoded))
+    return -1;
+
+  const int id = enigma::get_free_buffer();
+
+  if (id < 0)
+    return -1;
+
+  std::unique_ptr<enigma::BinaryBuffer> buffer;
+
+  try {
+    buffer.reset(new enigma::BinaryBuffer(0));
+    buffer->type = buffer_grow;
+    buffer->alignment = 1;
+    buffer->data = std::move(decoded);
+
+    const size_t index = static_cast<size_t>(id);
+
+    if (index < enigma::buffers.size()) {
+      enigma::buffers[index] = buffer.get();
+    } else {
+      enigma::buffers.push_back(buffer.get());
+    }
+  } catch (const std::bad_alloc&) {
+    return -1;
+  } catch (const std::length_error&) {
+    return -1;
+  }
+  
+  buffer.release();
   return id;
 }
 
@@ -1152,9 +1383,61 @@ int buffer_base64_decode_ext(int buffer, string str, unsigned offset) {
 }
 
 string buffer_base64_encode(int buffer, unsigned offset, unsigned size) {
-  //get_bufferr(binbuff, buffer, 0);
-  //TODO: Write this function
-  return NULL;
+  if (!enigma::buffer_valid(buffer))
+    return {};
+
+  const enigma::BinaryBuffer* binbuff =
+      enigma::buffers[static_cast<size_t>(buffer)];
+  const size_t buffer_size = binbuff->data.size();
+  const size_t start = static_cast<size_t>(offset);
+
+  if (start > buffer_size)
+    return {};
+
+  const size_t available = buffer_size - start;
+  const size_t count = std::min(
+      static_cast<size_t>(size), available);
+
+  if (count > (std::string().max_size() - 2) / 4 * 3)
+    return {};
+
+  static const char alphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      "abcdefghijklmnopqrstuvwxyz"
+      "0123456789+/";
+
+  std::string result;
+
+  try {
+    result.reserve(((count + 2) / 3) * 4);
+
+    for (size_t i = 0; i < count; i += 3) {
+      const unsigned int a = binbuff->data[start + i];
+      const unsigned int b =
+          i + 1 < count ? binbuff->data[start + i + 1] : 0;
+
+      const unsigned int c =
+          i + 2 < count ? binbuff->data[start + i + 2] : 0;
+
+      const unsigned int block =
+          (a << 16) | (b << 8) | c;
+
+      result.push_back(alphabet[(block >> 18) & 0x3F]);
+      result.push_back(alphabet[(block >> 12) & 0x3F]);
+
+      result.push_back(
+          i + 1 < count ? alphabet[(block >> 6) & 0x3F] : '=');
+
+      result.push_back(
+          i + 2 < count ? alphabet[block & 0x3F] : '=');
+    }
+  } catch (const std::bad_alloc&) {
+    return {};
+  } catch (const std::length_error&) {
+    return {};
+  }
+
+  return result;
 }
 
 void game_save_buffer(int buffer) {
