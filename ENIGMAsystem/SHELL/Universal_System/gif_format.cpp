@@ -202,7 +202,7 @@ unsigned char* read_entire_file(const char* filename, size_t& size)
   if (!input.good()) {
     return nullptr;
   }
-  return 0;
+
   const std::streampos end = input.tellg();
   if (end < 0 ||
       static_cast<uintmax_t>(end) >
