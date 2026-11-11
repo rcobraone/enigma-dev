@@ -32,6 +32,7 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <memory>
 
 namespace enigma {
 
@@ -76,14 +77,19 @@ void exe_loadfonts(FILE_t* exe) {
      return;
     }
     const size_t size = static_cast<size_t>(twid) * thgt;
-    unsigned char* mono = new unsigned char[size];
+    
+
+    std::unique_ptr<unsigned char[]> mono(new unsigned char[size]);
     if (!fread_wrapper(mono, sizeof(char), size, exe)) {
-     delete[] mono;
-    return;
+      return;
     }
     
-    unsigned char* pixels = mono_to_rgba(mono, twid, thgt);
-    delete[] mono;
+    std::unique_ptr<unsigned char[]> pixels(
+        mono_to_rgba(mono.get(), twid, thgt));
+    mono.reset();
+    if (!pixels)
+      return;
+
 
     if (!fread_wrapper(&nullhere, 4, 1, exe)) return;
     if (memcmp(&nullhere, "done", sizeof(int)) != 0) {
@@ -135,7 +141,7 @@ void exe_loadfonts(FILE_t* exe) {
     font.height = ymax - ymin + 2;
     font.yoffset = -ymin + 1;
 
-    font.texture = graphics_create_texture(RawImage(pixels, twid, thgt), false);
+    font.texture = graphics_create_texture(RawImage(pixels.release(), twid, thgt), false);
     font.twid = twid;
     font.thgt = thgt;
 
