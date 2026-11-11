@@ -84,7 +84,7 @@ namespace enigma {
   }
   
   static inline int file_open(const std::string& fname, std::ios_base::openmode mode) {
-    file f(fname, mode);
+   
     constexpr int MAX_OPEN_FILES = 32;
     int open_count = 0;
 
@@ -97,6 +97,8 @@ namespace enigma {
     if (open_count >= MAX_OPEN_FILES) {
       return -1;
     }
+    
+    file f(fname, mode);
     
     try_io_and_print(f)
     
@@ -208,7 +210,13 @@ bool file_text_eoln(int fileid) {
 
   auto& fs = enigma::files.get(fileid).fs;
 
-  if (fs.bad() || fs.fail()) {
+  if (fs.bad()) {
+    return false;
+  }
+  if (fs.eof()) {
+    return true;
+  }
+  if (fs.fail()) {
     return false;
   }
 
@@ -385,10 +393,6 @@ size_t file_bin_position(int fileid) {
   if (!enigma::valid_file_handle(fileid)) return 0;
   auto& fs = enigma::files.get(fileid).fs;
   if (!fs.is_open()) return 0;
-   fs.clear();
-   std::streampos position = fs.tellg();
-   
-  fs.clear();
 
   std::streampos position = fs.tellg();
 
