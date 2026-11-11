@@ -26,6 +26,7 @@
 #include "Widget_Systems/widgets_mandatory.h"
 #include <limits>
 #include <cstring>
+#include <memory>
 
 using enigma::Background;
 using enigma::backgrounds;
@@ -151,12 +152,15 @@ void background_save(int back, std::string fname) {
   }
   
   unsigned w, h;
-  unsigned char* rgbdata =
-      enigma::graphics_copy_texture_pixels(bkg.textureID, &w, &h);
+  std::unique_ptr<unsigned char[]> rgbdata(
+      enigma::graphics_copy_texture_pixels(bkg.textureID, &w, &h));
+  if (!rgbdata || w == 0 || h == 0) {
+    DEBUG_MESSAGE("ERROR - Unable to read background texture pixels.",
+                  MESSAGE_TYPE::M_USER_ERROR);
+    return;
+  }
 
-  enigma::image_save(fname, rgbdata, bkg.width, bkg.height, w, h, false);
-
-  delete[] rgbdata;
+  enigma::image_save(fname, rgbdata.get(), bkg.width, bkg.height, w, h, false);
 }
 
 void background_delete(int back, bool free_texture) {
@@ -179,7 +183,8 @@ void background_assign(int back, int copy_background, bool free_texture) {
   if (back == copy_background)
     return;
 	
-  backgrounds.get(back).FreeTexture();
+  if (free_texture)
+    backgrounds.get(back).FreeTexture();
   Background copy = backgrounds.get(copy_background);
   backgrounds.assign(back, std::move(copy));
 }
