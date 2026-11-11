@@ -68,17 +68,16 @@ string toString(const variant &a) {
     const double dVal = a.rval.d;
 
     if (std::isfinite(dVal)) {
-      const long double ldVal = static_cast<long double>(dVal);
-      const long double minLong =
-          static_cast<long double>(std::numeric_limits<long>::lowest());
-      const long double maxLong =
-          static_cast<long double>(std::numeric_limits<long>::max());
+      constexpr int long_digits =
+          std::numeric_limits<long>::digits;
+      const double upper_bound = std::ldexp(1.0, long_digits);
+      const double lower_bound = -upper_bound;
 
-      if (ldVal >= minLong && ldVal <= maxLong) {
+      if (dVal >= lower_bound &&
+          dVal < upper_bound &&
+          std::trunc(dVal) == dVal) {
         const long lVal = static_cast<long>(dVal);
-        if (dVal == static_cast<double>(lVal)) {
-          return toString(lVal);
-        }
+        return toString(lVal);
       }
      }
 
