@@ -979,15 +979,19 @@ VARBINOP double operator%(T a, const U &b) {
 }
 
 VARBINOP long long operator<<(T a, const U &b) {
-  const long long shift = (long long)b.rval.d;
-  if (shift < 0 || shift >= 64)
+  const double shift_value = b.rval.d;
+  if (!std::isfinite(shift_value) ||
+      shift_value < 0.0 || shift_value >= 64.0)
     return 0;
+  const int shift = static_cast<int>(shift_value);    
   return (long long)a << shift;
 }
 VARBINOP long long operator>>(T a, const U &b) {
-  const long long shift = (long long)b.rval.d;
-  if (shift < 0 || shift >= 64)
+  const double shift_value = b.rval.d;
+  if (!std::isfinite(shift_value) ||
+      shift_value < 0.0 || shift_value >= 64.0)
     return 0;
+  const int shift = static_cast<int>(shift_value);   
   return (long long)a >> shift;
 }
 VARBINOP long long operator&(T a, const U &b) {
