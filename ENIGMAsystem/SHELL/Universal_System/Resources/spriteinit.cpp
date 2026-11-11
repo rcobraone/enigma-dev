@@ -95,6 +95,14 @@ namespace enigma
         return;
       }
       Sprite spr(width, height, xorig, yorig);
+
+      if (bbr < bbl || bbb < bbt ||
+          bbr > width || bbb > height) {
+        DEBUG_MESSAGE("Sprite load error: Invalid bounding box.",
+                      MESSAGE_TYPE::M_ERROR);
+        return;
+      }
+     
       spr.SetBBox(bbl, bbt, bbr-bbl, bbb-bbt);
       
       for (int ii=0;ii<subimages;ii++)
