@@ -232,6 +232,9 @@ RawImage image_pad(const RawImage& in, unsigned newWidth, unsigned newHeight) {
 }
 
 RawImage image_crop(const RawImage& in, unsigned newWidth, unsigned newHeight) {
+  if (newWidth == 0 || newHeight == 0)
+    return RawImage();
+
   if (newWidth > in.w || newHeight > in.h)
     return RawImage();
 
