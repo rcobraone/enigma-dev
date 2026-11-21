@@ -94,6 +94,11 @@ namespace enigma
     {
         objectdata.resize(object_idmax);
 
+        // Clear previous object pointers before rebuilding the lookup table.
+        for (size_t i = 0; i < objectdata.size(); ++i) {
+            objectdata[static_cast<int>(i)] = nullptr;
+        }
+
         const size_t count = objectcount > 0
             ? (objs.size() < static_cast<size_t>(objectcount)
                 ? objs.size()
