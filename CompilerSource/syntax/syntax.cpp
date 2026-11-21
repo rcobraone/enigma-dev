@@ -455,32 +455,44 @@ namespace syncheck
         pt spos;
         case '"':
             spos = pos;
-            if (setting::use_cpp_escapes)
-              while (code[++pos]!='"') {
-                if (pos >= code.length()) {
+            if (setting::use_cpp_escapes) {
+              while (++pos < code.length() && code[pos] != '"') {
+                if (code[pos] == '\\') {
+                  if (++pos >= code.length()) {
                   syerr = "Unclosed double quote at this point";
                   return superPos;
+			      }
                 }
-                if (code[pos] == '\\')
-                  pos++;
+
               }
-            else
-              while (code[++pos]!='"');
+            } else {
+              while (++pos < code.length() && code[pos] != '"');
+            }
+            if (pos >= code.length()) {
+              syerr = "Unclosed double quote at this point";
+              return superPos;
+            }
             lex.push_back(token(TT_STRING, code.substr(spos,pos-spos+1), superPos, pos-spos, false, true, false, mymacroind));
           pos++; break;
         case '\'':
             spos = pos;
-            if (setting::use_cpp_escapes)
-              while (code[++pos] != '\'') {
-                if (pos >= code.length()) {
+            if (setting::use_cpp_escapes) {
+              while (++pos < code.length() && code[pos] != '\'') {
+                if (code[pos] == '\\') {
+                  if (++pos >= code.length()) {
                   syerr = "Unclosed quote at this point";
                   return superPos;
+			      }
                 }
-                if (code[pos] == '\\')
-                  pos++;
+
               }
-            else
-              while (code[++pos]!='\'');
+            } else {
+              while (++pos < code.length() && code[pos] != '\'');
+            }
+            if (pos >= code.length()) {
+              syerr = "Unclosed quote at this point";
+              return superPos;
+            }
             lex.push_back(token(TT_STRING, code.substr(spos,pos-spos+1), superPos, pos-spos, false, true, false, mymacroind));
           pos++; break;
 
@@ -495,7 +507,9 @@ namespace syncheck
 
         int sz;
         case '+': case '-':
-            sz = 1 + (code[pos+1] == code[pos] and setting::use_incrementals);
+            sz = 1 + (pos + 1 < code.length() &&
+                      code[pos+1] == code[pos] &&
+                      setting::use_incrementals);
             if (!lex.size() or lex[lexlast].separator or lex[lexlast].operatorlike)
               lex.push_back(token(TT_UNARYPRE, code.substr(pos,sz), superPos, sz, false, false, true, mymacroind));
             else if (sz == 2)
@@ -509,7 +523,7 @@ namespace syncheck
         case '*':
             if (!lex.size() or lex[lexlast].separator or lex[lexlast].operatorlike)
               lex.push_back(token(TT_UNARYPRE, "*", superPos, 1, false, false, true, mymacroind)), ++pos;
-            else if (code[pos+1] == '=')
+            else if (pos + 1 < code.length() && code[pos+1] == '=')
               lex.push_back(token(TT_ASSOP, "*=", superPos, 2, false, false, true, mymacroind)), pos += 2;
             else
               lex.push_back(token(TT_OPERATOR, "*", superPos, 1, false, false, true, mymacroind)), ++pos;
@@ -535,19 +549,24 @@ namespace syncheck
               }
               lex.push_back(token(TT_UNARYPRE, code.substr(pos,1), superPos, 1, false, false, true, mymacroind)), ++pos;
             }
-            else if (code[pos+1] == code[pos] or (code[pos+1] == '>' and code[pos] == '<')) {
-              if ((code[pos] == '<' or code[pos] == '>') and code[pos] == code[pos+1] and code[pos+2] == '=')
+            else if (pos + 1 < code.length() &&
+                     (code[pos+1] == code[pos] ||
+                      (code[pos+1] == '>' && code[pos] == '<'))) {
+              if ((code[pos] == '<' || code[pos] == '>') &&
+                  code[pos] == code[pos+1] &&
+                  pos + 2 < code.length() &&
+                  code[pos+2] == '=')
                 lex.push_back(token(code[pos] != code[pos+1] ? TT_OPERATOR : TT_ASSOP, code.substr(pos,3), superPos, 3, false, false, true, mymacroind)), pos += 3; // <<= >>=
               else
                 lex.push_back(token(TT_OPERATOR, code.substr(pos,2), superPos, 2, false, false, true, mymacroind)), pos += 2; // << >> && || ^^ <>
             }
-            else if (code[pos+1] == '=')
+            else if (pos + 1 < code.length() && code[pos+1] == '=')
               lex.push_back(token((code[pos] == '<' or code[pos] == '>')?TT_OPERATOR:TT_ASSOP, code.substr(pos,2), superPos, 2, false, false, true, mymacroind)), pos += 2; // >= <= &= |= ^=
             else
               lex.push_back(token(TT_OPERATOR, code.substr(pos,1), superPos, 1, false, false, true, mymacroind)), ++pos; // > < & | ^
           break;
         case '/':
-            if (code[pos+1] == '/') { // Two-slash comments
+            if (pos + 1 < code.length() && code[pos+1] == '/') { // Two-slash comments
               while (++pos < code.length() and code[pos] != '\n' and code[pos] != '\r');
               continue;
             }
@@ -561,14 +580,14 @@ namespace syncheck
               syerr = "Primary expression expected before operator";
               return superPos;
             }
-            if (code[pos+1] == '=')
+            if (pos + 1 < code.length() && code[pos+1] == '=')
               lex.push_back(token(TT_ASSOP, "%=", superPos, 2, false, false, true, mymacroind)), pos += 2; // %= /=
             else
               lex.push_back(token(TT_OPERATOR, "%", superPos, 1, false, false, true, mymacroind)), ++pos;
           break;
 
         case '!':
-            if (code[pos+1] == '=') {
+            if (pos + 1 < code.length() && code[pos+1] == '=') {
               lex.push_back(token(TT_OPERATOR, "!=", superPos, 2, false, false, true, mymacroind)), pos += 2;
               continue;
             }
@@ -592,7 +611,7 @@ namespace syncheck
               syerr = "Unexpected = at this point.";
               return superPos;
             }
-            sz = (code[pos+1] == '=') + 1;
+            sz = (pos + 1 < code.length() && code[pos+1] == '=') + 1;
             lex.push_back(token(sz==2 ? TT_OPERATOR : TT_ASSOP, string(sz,'='), superPos, sz, false, false, true, mymacroind)), pos += sz;
           break;
         default:
