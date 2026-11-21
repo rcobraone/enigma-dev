@@ -113,21 +113,31 @@ inline void jdip::macro_function::preparse(string val, error_handler *herr)
     }
     
     if (val[i] == '/') { // Unfortunately, we must also do comment checking.
-      if (val[i+1] == '*') { i += 3; // This is a hack to save lines on this trivialty
-        while (i < val.length() and (val[i] != '/' or val[i-1] != '*')) ++i;
-      } else if (val[i+1] == '/')
-        while (++i < val.length() and val[i] != '\n');        
+      if (i + 1 < val.length() && val[i+1] == '*') {
+        i += 2;
+       while (i < val.length() and (val[i] != '/' or val[i-1] != '*')) ++i;
+        if (i < val.length())
+          ++i;
+        continue;
+
+      } else if (i + 1 < val.length() && val[i+1] == '/') {       while (++i < val.length() and val[i] != '\n'); 
+        continue;
+      }               
     }
     
     if (is_digit(val[i])) { // We must also be sure to skip numbers,
-      while (is_digit(val[++i])); // As they could have postfixes matching a parameter
+      ++i;
+      while (i < val.length() && is_digit(val[i]))
+        ++i;
       continue;
     }
     
     if (is_letter(val[i])) // If we do encounter a letter, the fun begins.
     {
       const unsigned sp = i; // We record where we're leaving off
-      while (is_letterd(val[++i])); // And navigate to the end of the identifier.
+      ++i;
+      while (i < val.length() && is_letterd(val[i]))
+        ++i;
       map<string,int>::iterator pi = parameters.find(val.substr(sp,i-sp));
       if (pi != parameters.end()) // Then check if it's a parameter.
       {
@@ -141,23 +151,37 @@ inline void jdip::macro_function::preparse(string val, error_handler *herr)
     
     if (val[i] == '#')
     {
-      if (val[++i] == '#') {
+      ++i;
+      if (i < val.length() && val[i] == '#') {
         if (i <= 1) continue;
         pt ie = i - 2;
         while (ie > 0 and is_useless(val[ie])) --ie; // eliminate any leading whitespace
         if (ie > push_from) // If there's anything non-white to push since last time,
           value.push_back(mv_chunk(val.c_str(), push_from, ie-push_from+1)); // Then push it
-        while (is_useless(val[++i])); // Skip any trailing whitespace
+        ++i;
+        while (i < val.length() && is_useless(val[i]))
+          ++i;
         push_from = i;
         continue;
       }
-      if (--i > push_from) // If we've covered any ground since our last value push,
+      if (i == 0)
+        continue;
+      --i;
+      if (i > push_from) // If we've covered any ground since our last value push,
         value.push_back(mv_chunk(val.c_str(), push_from, i-push_from)); // Push it onto our value
-      while (is_useless_macros(val[++i]));
+      ++i;
+      while (i < val.length() && is_useless_macros(val[i]))
+        ++i;
       push_from = i; // Store current position just in case something stupid happens
-      if (!is_letter(val[i])) { herr->error("Expected parameter name following '#' token; `" + val + "'[" + ::toString(i) + "] is not a valid identifier character"); continue; }
+       "'[" + ::toString(i) + "] is not a valid identifier character"); continue; }
+      if (i >= val.length() || !is_letter(val[i])) {
+        herr->error("Expected parameter name following '#' token; `" + val + "'[" + ::toString(i) + "] is not a valid identifier character");
+        continue;
+      }
       const size_t asi = i;
-      while (is_letterd(val[++i]));
+      ++i;
+      while (i < val.length() && is_letterd(val[i]))
+        ++i;
       map<string,int>::iterator pi = parameters.find(val.substr(asi,i-asi));
       if (pi == parameters.end()) { herr->error("Expected parameter name following '#' token: `" + val.substr(asi,i-asi) + "' does not name a parameter"); continue; }
       
