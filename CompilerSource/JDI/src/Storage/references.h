@@ -212,6 +212,14 @@ namespace jdi {
 #include <API/AST_forward.h>
 
 namespace jdi {
+
+/// add node_func	
+struct node_func: node {
+   parameter_ct params;
+   node_func(node*, parameter_ct&);
+   node_func(node*, const parameter_ct&);
+   ~node_func();
+ };	
   /// Parameter storage type; contains type info and other important parameter info.
   struct ref_stack::parameter: full_type {
     bool variadic; ///< True if this parameter can be passed several values; in C/C++, this is mandated to be the last parameter.

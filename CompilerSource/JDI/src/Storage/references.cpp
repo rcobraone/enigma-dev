@@ -36,6 +36,8 @@
 #endif
 #include <iostream>
 #include <cstdio>
+#include <string>
+
 using namespace std;
 
 namespace jdi {
@@ -44,13 +46,13 @@ namespace jdi {
   ref_stack::ref_stack(const ref_stack& rf) { /* cerr << "IMPLICITLY DUPLICATED REF STACK (CTOR)" << endl; */ copy(rf); }
   ref_stack::~ref_stack() { clear(); }
   
-  ref_stack &ref_stack::operator= (const ref_stack& rf) { clear(); cout << "IMPLICITLY DUPLICATED REF STACK (ASSN)" << endl; copy(rf); return *this; }
+  ref_stack &ref_stack::operator= (const ref_stack& rf) { clear(); copy(rf); return *this; }
   
   ref_stack &ref_stack::operator= (ref_stack& rf) { swap(rf); return *this; }
   
   ref_stack::node::node(node* p, ref_type rt): previous(p), type(rt) {}
   ref_stack::node_array::node_array(node* p, size_t b): node(p,RT_ARRAYBOUND), bound(b) {}
-  ref_stack::node_func::node_func(node* p, parameter_ct &ps): node(p,RT_FUNCTION), params() { params.swap(ps); }
+  ref_stack::node_func::node_func(node* p, parameter_ct &ps): node(p,RT_FUNCTION), params(ps) { params.swap(ps); }
   ref_stack::node_memptr::node_memptr(node* p, definition_class *memof): node(p,RT_MEMBER_POINTER), member_of(memof) {}
   
   ref_stack::node::~node() { }
@@ -60,6 +62,8 @@ namespace jdi {
   ref_stack::node* ref_stack::node::duplicate() {
     if (type == RT_ARRAYBOUND) return new node_array(NULL,((node_array*)this)->bound);
     if (type == RT_FUNCTION) return new node_func(NULL,((node_func*)this)->params);
+    if (type == RT_MEMBER_POINTER)
+      return new node_memptr(NULL, ((node_memptr*)this)->member_of);
     return new node(NULL,type);
   }
   
@@ -123,6 +127,7 @@ namespace jdi {
       ntop = dme->previous;
       if (!ntop)
         nbottom = NULL;
+      --sz;        
       free(dme);
     }
   }
@@ -137,6 +142,9 @@ namespace jdi {
   }
 
   void ref_stack::copy(const ref_stack& rf) {
+    if (this == &rf)
+      return;
+	  
     name = rf.name;
     ndef = rf.ndef;
     sz = rf.sz;
@@ -162,6 +170,9 @@ namespace jdi {
   }
   
   void ref_stack::append_c(ref_stack &rf) {
+    if (this == &rf)
+      return;
+	  
     if (!rf.nbottom) return; // Appending an empty stack is meaningless
     if (!nbottom) nbottom = rf.nbottom; // If we didn't have anything on our stack, our nbottom is now its nbottom.
     rf.nbottom->previous = ntop; // If we had anything on our stack, then our ntop item comes before its nbottom item.
@@ -171,6 +182,9 @@ namespace jdi {
   }
   
   void ref_stack::append_nest_c(ref_stack &rf) {
+    if (this == &rf)
+      return;
+	  
     if (!rf.nbottom) {
       if (!rf.name.empty()) name = rf.name; // Grab the name, if it's meaningful
       if (rf.ndef) ndef = rf.ndef; // This way, we don't overwrite with NULL/""
@@ -186,6 +200,9 @@ namespace jdi {
   }
   
   void ref_stack::prepend_c(ref_stack& rf) {
+    if (this == &rf)
+      return;
+	  
     if (!rf.nbottom) return; //Prepending an empty stack is meaningless
     if (!ntop) ntop = rf.ntop; // If we didn't have anything on our stack, our ntop is now its ntop.
     else nbottom->previous = rf.ntop;
@@ -204,6 +221,8 @@ namespace jdi {
       p = n->previous;
       free(n);
     }
+    ntop = NULL;
+    nbottom = NULL;    
     sz = 0;
   }
   
@@ -220,6 +239,13 @@ namespace jdi {
   }
   
   ref_stack::parameter::parameter(): variadic(false), default_value(NULL) {}
+  
+  ref_stack::parameter::parameter(const parameter &p):
+  full_type(p),
+  variadic(p.variadic),
+  default_value(p.default_value ? p.default_value->duplicate() : NULL)
+  {}
+ 
   ref_stack::parameter::parameter(const full_type& ft, AST* dv): full_type(ft), variadic(false), default_value(dv) {}
   ref_stack::parameter::~parameter() { delete default_value; }
     
@@ -268,8 +294,7 @@ namespace jdi {
   static inline string arraybound_string(size_t b) {
     if (b == ref_stack::node_array::nbound)
       return "[]";
-    char buf[32]; sprintf(buf,"[%lu]",(long unsigned)b);
-    return buf;
+    return "[" + std::to_string(b) + "]";
   }
 
   string ref_stack::toStringRHS() const {
@@ -326,12 +351,14 @@ namespace jdi {
       if (type != j.type) return false;
       if (type == RT_ARRAYBOUND and arraysize() != j.arraysize()) return false;
       if (type == RT_FUNCTION and ((node_func*)this)->params != ((node_func*)&j)->params) return false;
+      if (type == RT_MEMBER_POINTER && ((node_memptr*)this)->member_of != ((node_memptr*)&j)->member_of) return false;      
       return true;
   }
   bool ref_stack::node::operator!=(const ref_stack::node &j) const {
       if (type != j.type) return true;
       if (type == RT_ARRAYBOUND and arraysize() != j.arraysize()) return true;
       if (type == RT_FUNCTION and ((node_func*)this)->params != ((node_func*)&j)->params) return true;
+      if (type == RT_MEMBER_POINTER && ((node_memptr*)this)->member_of != ((node_memptr*)&j)->member_of) return true;      
       return false;
   }
   
@@ -377,7 +404,7 @@ namespace jdi {
     if (size() < other.size()) return false;
     for (node *i = ntop, *j = other.ntop; i or j; i = i->previous, j = j->previous) {
       doublecheck_size(i, j, false);
-      if (i->type != j->type) return i->type < j->type;
+      if (i->type != j->type) return i->type > j->type;
       if (i->type == RT_ARRAYBOUND and i->arraysize() != j->arraysize()) return i->arraysize() > j->arraysize();
       if (i->type == RT_FUNCTION and ((node_func*)i)->params != ((node_func*)j)->params) return ((node_func*)i)->params > ((node_func*)j)->params;
     }
@@ -448,30 +475,46 @@ namespace jdi {
   }
   
   bool ref_stack::parameter::operator==(const ref_stack::parameter& other) const {
-    return !default_value == !other.default_value and variadic == other.variadic;
+    return full_type::operator==(other)
+        and !default_value == !other.default_value
+        and variadic == other.variadic;
   }
   bool ref_stack::parameter::operator!=(const ref_stack::parameter& other) const {
-    return !default_value != !other.default_value or variadic != other.variadic;
+    return full_type::operator!=(other)
+        or !default_value != !other.default_value
+        or variadic != other.variadic;
   }
   bool ref_stack::parameter::operator<(const ref_stack::parameter& other) const {
+    if (full_type::operator!=(other))
+      return full_type::operator<(other);
+	  
     //if (default_value != other.default_value) return default_value < other.default_value;
     if (!default_value != !other.default_value) return !default_value > !other.default_value;
     if (variadic != other.variadic) return variadic < other.variadic;
     return false;
   }
   bool ref_stack::parameter::operator>(const ref_stack::parameter& other) const {
+    if (full_type::operator!=(other))
+      return full_type::operator>(other);
+	  
     //if (default_value != other.default_value) return default_value > other.default_value;
     if (!default_value != !other.default_value) return !default_value < !other.default_value;
     if (variadic != other.variadic) return variadic > other.variadic;
     return false;
   }
   bool ref_stack::parameter::operator<=(const ref_stack::parameter& other) const {
+    if (full_type::operator!=(other))
+      return full_type::operator<(other);
+	  
     //if (default_value != other.default_value) return default_value < other.default_value;
     if (!default_value != !other.default_value) return !default_value > !other.default_value;
     if (variadic != other.variadic) return variadic < other.variadic;
     return true;
   }
   bool ref_stack::parameter::operator>=(const ref_stack::parameter& other) const {
+    if (full_type::operator!=(other))
+      return full_type::operator>(other);
+	  
     //if (default_value != other.default_value) return default_value > other.default_value;
     if (!default_value != !other.default_value) return !default_value < !other.default_value;
     if (variadic != other.variadic) return variadic > other.variadic;
