@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
+#include <limits>
 
 using namespace std;
 
@@ -58,8 +59,13 @@ int lang_CPP::module_write_sounds(const GameData &game, FILE *gameModule)
   fwrite("SND ",4,1,gameModule);
 
   //Indicate how many
-  size_t sound_count = game.sounds.size();
-  fwrite(&sound_count,4,1,gameModule);
+  const size_t sound_count = game.sounds.size();
+  if (sound_count > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    user << "Too many sounds for the game module format." << flushl;
+    return 14;
+  }
+  const int sound_count32 = static_cast<int>(sound_count);
+  fwrite(&sound_count32,4,1,gameModule);
 
   int sound_maxid = 0;
   for (size_t i = 0; i < sound_count; i++)
@@ -74,9 +80,13 @@ int lang_CPP::module_write_sounds(const GameData &game, FILE *gameModule)
               "It will be omitted from the game." << flushl;
       continue;
     }
-
+    if (sndsz > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      user << "Sound `" << game.sounds[i].name
+           << "' is too large for the game module format." << flushl;
+      return 14;
+    }
     writei(game.sounds[i].id(), gameModule); // ID
-    writei(sndsz, gameModule); // Size
+    writei(static_cast<int>(sndsz), gameModule); // Size
     fwrite(game.sounds[i].audio.data(), 1, sndsz, gameModule); // Data
   }
 
