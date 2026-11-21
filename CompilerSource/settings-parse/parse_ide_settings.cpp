@@ -145,8 +145,14 @@ void parse_ide_settings(const char* eyaml)
   num_make_jobs = "1";
   if (settree.exists("jobs")) {
     const std::string &jobs = settree.get("jobs");
-    if (std::all_of(jobs.begin(), jobs.end(), [](char c) { return std::isdigit(c); })) {
+    if (std::all_of(jobs.begin(), jobs.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)); })) {
       num_make_jobs = settree.get("jobs").toString();
+    if (!jobs.empty() &&
+        std::all_of(jobs.begin(), jobs.end(),
+                    [](char c) {
+                      return std::isdigit(static_cast<unsigned char>(c));
+                    })) {
+      num_make_jobs = jobs;      
     }
   }
 
