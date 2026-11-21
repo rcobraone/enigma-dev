@@ -62,11 +62,14 @@ namespace extensions
       pe.path = pos == string::npos ? ""      : exts[i].substr(0, pos + 1);
       for (pos = 0; pos < pe.path.length(); pos++)
         if (pe.path[pos] == '\\')
-          pe.path[i] = '/';
+          pe.path[pos] = '/';
       
       ifstream iey((enigma_root/"ENIGMAsystem/SHELL"/exts[i]/"About.ey").u8string().c_str());
-      if (!iey.is_open())
+      if (!iey.is_open()) {
         cout << "ERROR! Failed to open extension descriptor for " << exts[i] << endl;
+      continue;
+    }
+
       ey_data about = parse_eyaml(iey,exts[i]);
       pe.implements = about.get("implement");
       pe.init = about.get("init");
@@ -84,8 +87,15 @@ namespace extensions
   {
     all_platforms.clear();
     cout << "\n\n\n\nStarting platform inspection\n";
-    for (auto& ef : std::filesystem::directory_iterator(enigma_root/"ENIGMAsystem/SHELL/Platforms/"))
-    {
+  std::error_code ec;
+  const std::filesystem::path platforms_path =
+      enigma_root/"ENIGMAsystem/SHELL/Platforms/";
+
+  for (auto& ef :
+       std::filesystem::directory_iterator(platforms_path, ec))
+  {
+    if (ec) break;
+		
       if (!ef.is_directory()) continue;
       const std::filesystem::path ef_path = enigma_root/"ENIGMAsystem/SHELL/Platforms"/ef/"Info/About.ey";
       ifstream ext(ef_path.c_str(), ios_base::in);
@@ -98,7 +108,11 @@ namespace extensions
         cout << "Skipping invalid platform API under `" << ef.path().u8string() << "': File does not specify an OS it represents.";
         continue;
       }
-      
+
+  if (ec)
+    cerr << "ERROR! Failed to inspect platform directory `"
+         << platforms_path << "': " << ec.message() << endl; 
+              
       sdk_descriptor& sdk = all_platforms[toUpper(ef.path().u8string())];
       sdk.name   = dat.get("name");
       sdk.author = dat.get("author");
