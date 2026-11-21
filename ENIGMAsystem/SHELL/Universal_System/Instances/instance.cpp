@@ -98,25 +98,11 @@ void instance_activate_all() {
             continue;
         }
         
-        if (!inst) {
-            iter = enigma::instance_deactivated_list.erase(iter);
-            continue;
-
-        }
-        
         std::map<int,enigma::object_basic*>::const_iterator next = iter;
         ++next;
         const bool has_next =
             next != enigma::instance_deactivated_list.end();
         const int next_id = has_next ? next->first : 0;
-
-        if (!inst) {
-            enigma::instance_deactivated_list.erase(iter);
-            iter = has_next
-                ? enigma::instance_deactivated_list.lower_bound(next_id)
-                : enigma::instance_deactivated_list.end();
-            continue;
-        }
 
         enigma::instance_deactivated_list.erase(iter);
         inst->activate();
@@ -162,25 +148,12 @@ void instance_activate_object(int obj) {
             iter = enigma::instance_deactivated_list.erase(iter);
             continue;
         }
-        
-        if (!inst) {
-            iter = enigma::instance_deactivated_list.erase(iter);
-            continue;
-        }
-       
+
             std::map<int,enigma::object_basic*>::const_iterator next = iter;
             ++next;
             const bool has_next =
                 next != enigma::instance_deactivated_list.end();
             const int next_id = has_next ? next->first : 0;
-
-        if (!inst) {
-            enigma::instance_deactivated_list.erase(iter);
-            iter = has_next
-                ? enigma::instance_deactivated_list.lower_bound(next_id)
-                : enigma::instance_deactivated_list.end();
-            continue;
-        }
 
         if (obj == all ||
             (obj < 100000
