@@ -32,12 +32,20 @@ inline string format_error(string code,string err,int pos)
 {
   if (pos == -1)
     return err;
+    
+  if (pos < 0)
+    pos = 0;
+  else if (static_cast<size_t>(pos) > code.size())
+    pos = static_cast<int>(code.size());
 
   int line = 1, lp = 1;
-  for (int i=0; i<pos; i++,lp++) {
-    if (code[i] =='\n')
-      line++, lp = 0, i += code[i+1] == '\n';
-    else if (code[i] == '\n') line++, lp = 0;
+  for (int i = 0; i < pos; i++, lp++) {
+    if (code[i] == '\n') {
+      line++;
+      lp = 0;
+      if (i + 1 < pos && code[i + 1] == '\n')
+        ++i;
+    }
   }
   return "Line " + tostring(line) + ", position " + tostring(lp) + " (absolute " + tostring(pos) + "): " + err;
 }
