@@ -38,7 +38,7 @@
 
 #include <sstream>
 #include <string>
-
+#include <cstring>
 #include <floatcomp.h>
 
 using namespace std;
@@ -1181,26 +1181,44 @@ void ds_map_destroy(const unsigned int id)
 
 void ds_map_clear(const unsigned int id)
 {
-  //Clears all values from the map
-  ds_maps[id].clear();
+    auto map_it = ds_maps.find(id);
+
+    if (map_it == ds_maps.end())
+        return;
+    map_it->second.clear();
 }
 
 void ds_map_copy(const unsigned int id, const unsigned int source)
 {
-  //Copies the source map onto the map
-  ds_maps[id] = ds_maps[source];
+    auto destination_it = ds_maps.find(id);
+    auto source_it = ds_maps.find(source);
+
+    if (destination_it == ds_maps.end() ||
+        source_it == ds_maps.end() ||
+        id == source)
+    {
+        return;
+    }
+
+    destination_it->second = source_it->second;
 }
 
 unsigned int ds_map_size(const unsigned int id)
 {
-  //Returns the size of the map
-  return ds_maps[id].size();
+    const auto map_it = ds_maps.find(id);
+
+    if (map_it == ds_maps.end())
+        return 0;
+
+    return static_cast<unsigned int>(map_it->second.size());
 }
 
 bool ds_map_empty(const unsigned int id)
 {
-  //Returns whether the map contains no values
-  return ds_maps[id].empty();
+const auto map_it = ds_maps.find(id);
+
+    return map_it == ds_maps.end() ||
+           map_it->second.empty();
 }
 
 void ds_map_add(const unsigned int id, const variant key, const variant val)
@@ -1299,20 +1317,18 @@ variant ds_map_find_previous(const unsigned int id, const variant key)
 
 variant ds_map_find_next(const unsigned int id, const variant key)
 {
-  //Returns the smallest key in the map larger than the indicated key
-   map<unsigned int, multimap<variant, variant> >::const_iterator map_it = ds_maps.find(id);
+  // Returns the smallest key in the map larger than the indicated key.
+  const auto map_it = ds_maps.find(id);
+
   if (map_it == ds_maps.end())
-    return variant()
-  multimap<variant, variant>::iterator it;
-  variant key_check;
-  for (rit = map_it->second.rbegin(); rit != map_it->second.rend(); rit++)
-  {
-    if ((key_check = (*it).first) > key)
-    {
-      return key_check;
-    }
-  }
-  return variant();
+    return variant();
+
+  const auto it = map_it->second.upper_bound(key);
+
+  if (it == map_it->second.end())
+    return variant();
+
+  return it->first;
 }
 
 variant ds_map_find_first(const unsigned int id)
@@ -1343,21 +1359,34 @@ bool ds_map_exists(const unsigned int id)
 
 unsigned int ds_map_duplicate(const unsigned int source)
 {
-  //creates and returns a new map containing a copy of the source map
-  const unsigned int id = ds_maps_maxid++;
-  ds_maps.insert(pair<unsigned int, multimap<variant, variant> >(id, multimap<variant, variant>()));
-  ds_maps[id] = ds_maps[source];
-  return id;
+    const auto source_it = ds_maps.find(source);
+    const unsigned int id = ds_maps_maxid++;
+
+    if (source_it == ds_maps.end())
+    {
+        ds_maps.emplace(id, multimap<variant, variant>());
+    }
+    else
+    {
+        ds_maps.emplace(id, source_it->second);
+    }
+
+    return id;
 }
 
 std::string ds_map_write(const unsigned int id)
 {
+	
+  const auto map_it = ds_maps.find(id);
+  if (map_it == ds_maps.end())
+    return std::string();
+		
   std::stringstream ss;
   ss.flags(std::ios::hex | std::ios::uppercase | std::ios::internal);
   ss.width(4);
   ss.fill('0');
 
-  const std::multimap<variant, variant>& dsMap = ds_maps[id];
+  const std::multimap<variant, variant>& dsMap = map_it->second;
 
   // Write size
   ss << std::hex << dsMap.size();
@@ -1412,114 +1441,86 @@ std::string ds_map_write(const unsigned int id)
 
 void ds_map_read(const unsigned int id, std::string value)
 {
-  std::stringstream ss;
-  size_t i = 4;
-  unsigned long count_value;
+  auto map_it = ds_maps.find(id);
+  if (map_it == ds_maps.end())
+    return;
 
-  // Read count
+  size_t position = 4;
+  unsigned long count_value = 0;
+
   if (!ds_read_hex(value, 0, 4, count_value))
     return;
 
-  const unsigned int count = static_cast<unsigned int>(count_value);
+  if (count_value > value.size() / 4)
+    return;
 
-  for (int j = 0; j < count; ++j)
+  std::vector<std::pair<variant, variant>> parsed_values;
+  parsed_values.reserve(static_cast<size_t>(count_value));
+
+  static_assert(sizeof(double) == 8,
+                "DS serialization requires 64-bit double");
+
+  const auto read_value = [&](variant& result) -> bool
   {
-    variant variKey, variValue;
-    int type;
+    if (!ds_read_has_bytes(value, position, 2))
+      return false;
 
-    // Read type
-    unsigned long type_value;
-    if (!ds_read_hex(value, i, 2, type_value))
+    unsigned long type_value = 0;
+    if (!ds_read_hex(value, position, 2, type_value))
+      return false;
+
+    position += 2;
+
+    if (type_value == 0)
+    {
+      if (!ds_read_has_bytes(value, position, sizeof(double)))
+        return false;
+
+      double number = 0.0;
+      std::memcpy(&number, value.data() + position, sizeof(number));
+      position += sizeof(number);
+
+      result.rval.d = number;
+      result.type = ty_real;
+      return true;
+    }
+
+    if (type_value != 1)
+      return false;
+
+    unsigned long length_value = 0;
+    if (!ds_read_hex(value, position, 4, length_value))
+      return false;
+
+    position += 4;
+
+    if (position > value.size() ||
+        length_value > value.size() - position)
+      return false;
+
+    const size_t length = static_cast<size_t>(length_value);
+    result = value.substr(position, length);
+    position += length;
+    return true;
+  };
+
+  for (size_t index = 0;
+       index < static_cast<size_t>(count_value);
+       ++index)
+  {
+    variant key;
+    variant mapped_value;
+
+    if (!read_value(key) || !read_value(mapped_value))
       return;
 
-    type = static_cast<int>(type_value);
-
-    i += 2;
-
-    if (type == 0)
-    {
-      unsigned long raw;
-      if (!ds_read_hex(value, i, 16, raw))
-        return;
-
-      i += 16;
-
-      string b = value.substr(i - 16, 16);
-      char *end = nullptr;
-      const double d = strtod(b.c_str(), &end);
-      if (end == b.c_str())
-        return;
-
-      variKey.rval.d = d;
-      variKey.type = ty_real;
-    }
-    else
-    {
-      unsigned long len_value;
-
-      // Read length
-      if (!ds_read_hex(value, i, 4, len_value))
-        return;
-
-      i += 4;
-      
-      if (len_value > value.size() - i)
-        return;
-
-      const size_t len = static_cast<size_t>(len_value);
-
-      variKey = value.substr(i, len);
-      i += len;
-    }
-
-    // Read type
-    unsigned long type_value;
-    if (!ds_read_hex(value, i, 2, type_value))
-      return;
-
-    type = static_cast<int>(type_value);
-    
-    i += 2;
-
-    if (type == 0)
-    {
-      if (!ds_read_has_bytes(value, i, 16))
-        return;	
-		
-      string b;
-      ss << std::hex << value.substr(i, 16);
-      ss >> b;
-      double d = atof(b.c_str());
-
-      ss.clear();
-      i += 16;
-
-      variValue.rval.d = d;
-      variValue.type = ty_real;
-    }
-    else
-    {
-      unsigned long len_value;
-
-      // Read length
-      if (!ds_read_hex(value, i, 4, len_value))
-        return;
-
-      i += 4;
-      
-      if (len_value > value.size() - i)
-        return;
-
-      const size_t len = static_cast<size_t>(len_value);
-
-      variValue = value.substr(i, len);
-      i += len;
-    }
-
-    // Push value
-    ds_maps[id].insert(std::pair<variant, variant>(variKey, variValue));
+    parsed_values.emplace_back(key, mapped_value);
   }
-}
+
+  if (position != value.size())
+    return;
+
+  map_it->second.insert(parsed_values.begin(), parsed_values.end());
 
 }
 
@@ -1548,115 +1549,176 @@ void ds_list_destroy(const unsigned int id)
 
 void ds_list_clear(const unsigned int id)
 {
-  //Clears all values from the list
-  ds_lists[id].clear();
+    auto list_it = ds_lists.find(id);
+
+    if (list_it == ds_lists.end())
+        return;
+
+    list_it->second.clear();
 }
 
 void ds_list_copy(const unsigned int id, const unsigned int source)
 {
-  //Copies the source list onto the list
-  ds_lists[id] = ds_lists[source];
+    auto destination_it = ds_lists.find(id);
+    auto source_it = ds_lists.find(source);
+
+    if (destination_it == ds_lists.end() ||
+        source_it == ds_lists.end())
+        return;
+
+    if (id == source)
+       return;
+
+    destination_it->second = source_it->second;
 }
 
 unsigned int ds_list_size(const unsigned int id)
 {
-  //Returns the size of the list
-  return ds_lists[id].size();
+    const auto list_it = ds_lists.find(id);
+
+    if (list_it == ds_lists.end())
+        return 0;
+
+    return static_cast<unsigned int>(list_it->second.size());
 }
 
 bool ds_list_empty(const unsigned int id)
 {
-  //Returns whether the list contains no values
-  return ds_lists[id].empty();
+    const auto list_it = ds_lists.find(id);
+
+    return list_it == ds_lists.end() ||
+           list_it->second.empty();
 }
 
 void ds_list_add(const unsigned int id, const enigma::varargs &values)
 {
-  //Adds the values at the end of the list.
-  for (int i = 0; i < values.argc; ++i)
-    ds_lists[id].push_back(values.get(i));
+   auto list_it = ds_lists.find(id);
+
+    if (list_it == ds_lists.end())
+        return;
+
+    auto& list = list_it->second;
+
+    for (int i = 0; i < values.argc; ++i)
+        list.push_back(values.get(i));
 }
 
 void ds_list_insert(const unsigned int id, const unsigned int pos, const variant val)
 {
   //Inserts val and the given pos in the list
-  if (pos < 0 || static_cast<size_t>(pos) > ds_lists[id].size())
+  auto list_it = ds_lists.find(id);
+  if (list_it == ds_lists.end() ||
+      static_cast<size_t>(pos) > list_it->second.size())
     return;
-    ds_lists[id].insert(ds_lists[id].begin() + pos, val);
+    
+  list_it->second.insert(list_it->second.begin() + pos, val);
 }
 
 void ds_list_replace(const unsigned int id, const unsigned int pos, const variant value)
 {
   //replaces the value at pos with the val in the list
-  if (pos < 0 || static_cast<size_t>(pos) >= ds_lists[id].size())
-  {
-    ds_lists[id][pos] = value;
-  }
+  auto list_it = ds_lists.find(id);
+  if (list_it == ds_lists.end() ||
+      static_cast<size_t>(pos) >= list_it->second.size())
+    return;
+
+  list_it->second[pos] = value;
 }
 
 void ds_list_delete(const unsigned int id, const unsigned int pos)
 {
   //deletes the value at the given pos in the list
-  if (pos < 0 || static_cast<size_t>(pos) >= ds_lists[id].size())
+  auto list_it = ds_lists.find(id);
+  if (list_it == ds_lists.end() ||
+      static_cast<size_t>(pos) >= list_it->second.size())
     return;
-
-    ds_lists[id].erase(ds_lists[id].begin() + pos);
-  }
+    
+  list_it->second.erase(list_it->second.begin() + pos);
 }
 
 void ds_list_delete(const unsigned int id, const unsigned int first, const unsigned int last)
 {
   //Deletes the values in the range between first and last
-  if (first <= last && first < ds_lists[id].size() && last < ds_lists[id].size())
-  {
-    ds_lists[id].erase(ds_lists[id].begin() + first, ds_lists[id].begin() + last+1);
-  }
+   auto list_it = ds_lists.find(id);
+
+    if (list_it == ds_lists.end())
+        return;
+
+    auto& values = list_it->second;
+
+    if (first > last ||
+        static_cast<size_t>(last) >= values.size())
+        return;
+
+    values.erase(
+        values.begin() + first,
+        values.begin() + last + 1
+    );
 }
 
 int ds_list_find_index(const unsigned int id, const variant val)
 {
-  for (size_t i = 0; i < ds_lists[id].size(); i++)
-  {
-    if (ds_lists[id][i] == val)
+    const auto list_it = ds_lists.find(id);
+
+    if (list_it == ds_lists.end())
+        return -1;
+
+    const auto& values = list_it->second;
+
+
+    for (size_t i = 0; i < values.size(); ++i)
     {
-      return i;
+        if (values[i] == val)
+        {
+            if (i > static_cast<size_t>(
+                    std::numeric_limits<int>::max()))
+                return -1;
+
+            return static_cast<int>(i);
+        }
     }
-  }
-  return -1;
+
+    return -1;
 }
 
 variant ds_list_find_value(const unsigned int id, const unsigned int pos)
 {
-  //Returns the value stored at the indicated position in the list
-  map<unsigned int, vector<variant> >::const_iterator list_it =
-      ds_lists.find(id);
+    const auto list_it = ds_lists.find(id);
 
-  if (list_it == ds_lists.end() ||
-      pos < 0 ||
-      static_cast<size_t>(pos) >= list_it->second.size())
+    if (list_it == ds_lists.end() ||
+        static_cast<size_t>(pos) >= list_it->second.size())
+    {
+        return variant();
+    }
 
-     return variant();
-
-  return list_it->second[pos];
+    return list_it->second[pos];
 }
 
 void ds_list_sort(const unsigned int id, const bool ascend)
 {
-  //Sorts the values in the list. When ascend is true the values are sorted in ascending order, otherwise in descending order.
-  if (ascend)
-  {
-    sort(ds_lists[id].begin(), ds_lists[id].end());
-  }
-  else
-  {
-    sort(ds_lists[id].rbegin(), ds_lists[id].rend());
-  }
+    auto list_it = ds_lists.find(id);
+
+    if (list_it == ds_lists.end())
+        return;
+
+    auto& values = list_it->second;
+
+    if (ascend)
+        std::sort(values.begin(), values.end());
+    else
+        std::sort(values.rbegin(), values.rend());
 }
 
 void ds_list_shuffle(const unsigned int id)
 {
-  //shuffles the values in the list into a random order
-  mt_random_shuffle(ds_lists[id].begin(), ds_lists[id].end());
+    auto list_it = ds_lists.find(id);
+
+    if (list_it == ds_lists.end())
+        return;
+        
+    auto& values = list_it->second;
+
+    mt_random_shuffle(values.begin(), values.end());
 }
 
 bool ds_list_exists(const unsigned int id)
@@ -1667,12 +1729,20 @@ bool ds_list_exists(const unsigned int id)
 
 unsigned int ds_list_duplicate(const unsigned int source)
 {
-  //creates and returns a new list containing a copy of the source list
-  const unsigned int id = ds_lists_maxid++;
-  ds_lists.insert(pair<unsigned int, vector<variant> >(
-      id, vector<variant>()));
-  ds_lists[id] = ds_lists[source];
-  return id;
+  const auto source_it = ds_lists.find(source);
+
+    const unsigned int id = ds_lists_maxid++;
+
+    if (source_it == ds_lists.end())
+    {
+        ds_lists.emplace(id, vector<variant>());
+    }
+    else
+    {
+        ds_lists.emplace(id, source_it->second);
+    }
+
+    return id;
 }
 
 std::string ds_list_write(const unsigned int id)
