@@ -38,7 +38,7 @@ inline bool iscomment(const string &n) {
   if (n.length() < 2 or n[0] != '/') return false;
   if (n[1] == '/') return true;
   if (n[1] != '*') return false;
-  for (unsigned i = 2; i < n.length(); i++)
+  for (size_t i = 2; i + 1 < n.length(); i++)
   {
     if (n[i] == '*' and n[i+1] == '/')
       return (i + 2 >= n.length());
@@ -144,10 +144,12 @@ static inline void compute_locals(language_adapter *lang, parsed_object *object,
     if (addls[pos] == ',') { object->locals[name] = dectrip(type, pres, sufs); pres = sufs = ""; continue; }
     if (is_letter(addls[pos]) or addls[pos] == '$') {
       const pt spos = pos;
-      while (is_letterdd(addls[++pos]));
+      while (++pos < addls.length() && is_letterdd(addls[pos]));
       string tn = addls.substr(spos,pos-spos);
       (lang->find_typename(tn) ? type : name) = tn;
-      pos--; continue;
+      if (pos > 0)
+        --pos;
+      continue;
     }
     if (addls[pos] == '*') { pres += '*'; continue; }
     if (addls[pos] == '[') {
@@ -163,7 +165,12 @@ static inline void compute_locals(language_adapter *lang, parsed_object *object,
       int cnt = 0;
 
       pt spos = ++pos;
-      while (is_useless(addls[spos])) spos++;
+      while (spos < addls.length() && is_useless(addls[spos]))
+        ++spos;
+      if (spos >= addls.length()) {
+        pos = addls.length();
+        break;
+      }
       pos = spos - 1;
 
       while (++pos < addls.length() and (cnt or (addls[pos] != ',' and addls[pos] != ';')))
@@ -714,7 +721,7 @@ static inline void write_basic_constructor(ofstream &wto);
 static inline void write_object_functionality(
     const GameData &game, const CompileState &state, int mode) {
   vector<unsigned> parent_undefined;
-  ofstream wto((codegen_directory/"Preprocessor_Environment_Editable/IDE_EDIT_objectfunctionality.h").u8string().c_str(),ios_base::out);
+  ofstream wto(codegen_directory/"Preprocessor_Environment_Editable/IDE_EDIT_objectfunctionality.h", ios_base::out);
 
   wto << license;
   wto << endl << "#define log_xor || log_xor_helper() ||" << endl;
