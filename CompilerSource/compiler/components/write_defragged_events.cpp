@@ -47,7 +47,7 @@ int lang_CPP::compile_writeDefraggedEvents(
 
   //Write timeline/moment names. Timelines are like scripts, but we don't have to worry about arguments or return types.
   for (size_t i = 0; i < game.timelines.size(); i++) {
-    for (int j = 0; j < game.timelines[i]->moments().size(); j++) {
+    for (size_t j = 0; j < game.timelines[i]->moments().size(); j++) {
       wto << "void TLINE_" << game.timelines[i].name << "_MOMENT_"
           << game.timelines[i]->moments(j).step() <<"();\n";
     }
@@ -96,7 +96,7 @@ int lang_CPP::compile_writeDefraggedEvents(
   for (size_t i = 0; i < game.timelines.size(); i++) {
     wto << "        case " << game.timelines[i].id() <<": {\n";
     wto << "          switch (moment_index) {\n";
-    for (int j = 0; j < game.timelines[i]->moments().size(); j++) {
+    for (size_t j = 0; j < game.timelines[i]->moments().size(); j++) {
       wto << "            case " <<j <<": {\n";
       wto << "              ::TLINE_" << game.timelines[i].name << "_MOMENT_"
                                       << game.timelines[i]->moments(j).step() << "();\n";
