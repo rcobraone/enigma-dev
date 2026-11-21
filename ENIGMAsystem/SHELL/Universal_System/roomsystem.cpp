@@ -85,17 +85,6 @@ namespace enigma
   roomstruct** roomdata;
   roomstruct** roomorder;
 
-static inline bool valid_view_dimensions(
-    gs_scalar width,
-    gs_scalar height)
-
-{
-   return std::isfinite(static_cast<double>(width)) &&
-           std::isfinite(static_cast<double>(height)) &&
-           width > gs_scalar(0) &&
-           height > gs_scalar(0);
-}
-
 static void test_room_order_integrity()
 {
   assert(enigma::valid_room_order());
@@ -107,23 +96,19 @@ static inline bool can_add_room(size_t room_count)
       std::numeric_limits<int>::max());
 }
 
-static inline bool valid_room_view_size(
-    gs_scalar width,
-    gs_scalar height)
-{
-  return std::isfinite(static_cast<double>(width)) &&
-         std::isfinite(static_cast<double>(height)) &&
-         width > gs_scalar(0) &&
-         height > gs_scalar(0);
-}
-
   void follow_object(int vob, size_t vc)
   {
     using namespace enigma_user;
     if (vc >= 8) {
       return;
     }
-    if (view_wview[vc] <= 0 || view_hview[vc] <= 0) {
+    if (!valid_view_dimensions(view_wview[vc], view_hview[vc])) {
+      return;
+    }
+    if (!std::isfinite(static_cast<double>(view_hspeed[vc])) ||
+        !std::isfinite(static_cast<double>(view_vspeed[vc])) ||
+        !std::isfinite(static_cast<double>(view_hborder[vc])) ||
+        !std::isfinite(static_cast<double>(view_vborder[vc]))) {
       return;
     }
     object_basic *instanceexists = fetch_instance_by_int(vob);
@@ -133,7 +118,9 @@ static inline bool valid_room_view_size(
       object_planar* vobr = (object_planar*)instanceexists;
 
       double vobx = vobr->x, voby = vobr->y;
-
+      if (!std::isfinite(vobx) || !std::isfinite(voby)) {
+        return;
+      }
       //int bbl=*vobr.x+*vobr.bbox_left,bbr=*vobr.x+*vobr.bbox_right,bbt=*vobr.y+*vobr.bbox_top,bbb=*vobr.y+*vobr.bbox_bottom;
       //if (bbl<view_xview[vc]+view_hbor[vc]) view_xview[vc]=bbl-view_hbor[vc];
 
@@ -252,8 +239,14 @@ static inline bool valid_room_view_size(
       background_coloring[i] = backs[i].color;
       if (enigma_user::background_exists(background_index[i])) {
         background_width[i] = background_get_width(background_index[i]); background_height[i] = background_get_height(background_index[i]);
-        background_xscale[i] = (backs[i].stretch) ? room_width/background_width[i] : 1;
-        background_yscale[i] = (backs[i].stretch) ? room_height/background_height[i] : 1;
+      background_xscale[i] =
+          (backs[i].stretch && background_width[i] > 0)
+              ? static_cast<double>(room_width) / background_width[i]
+              : 1.0;
+      background_yscale[i] =
+          (backs[i].stretch && background_height[i] > 0)
+              ? static_cast<double>(room_height) / background_height[i]
+              : 1.0;
       }
       else {
         background_width[i] = 0; background_height[i] = 0;
@@ -405,6 +398,9 @@ static inline bool valid_room_view_size(
         enigma_user::room_first = roomorder[0]->id;
         enigma_user::room_last =
             roomorder[static_cast<size_t>(room_loadtimecount - 1)]->id;
+      } else {
+        enigma_user::room_first = 0;
+        enigma_user::room_last = 0;            
       }
     }
     catch (const std::bad_alloc&) {
@@ -415,8 +411,19 @@ static inline bool valid_room_view_size(
 
 
 //Implement the "room" global before we continue
-void enigma::roomv::function(const variant &oldval) {
-  enigma_user::room_goto((int)rval.d);
+void enigma::roomv::function(const variant &oldval)
+{
+  const double requested_room = rval.d;
+
+  if (std::isfinite(requested_room) &&
+      requested_room >= static_cast<double>(
+          std::numeric_limits<int>::min()) &&
+      requested_room <= static_cast<double>(
+          std::numeric_limits<int>::max()))
+  {
+    enigma_user::room_goto(static_cast<int>(requested_room));
+  }
+
   rval.d = oldval.rval.d;
 }
 namespace enigma_user {
@@ -446,6 +453,23 @@ static inline bool valid_room_index(int indx)
          enigma::roomdata[indx] != nullptr;
 }
 
+static inline bool get_current_room_index(int &index)
+{
+  const double value = room.rval.d;
+
+  if (!std::isfinite(value) ||
+      value < 0.0 ||
+      value > static_cast<double>(
+          std::numeric_limits<int>::max()) ||
+      std::floor(value) != value)
+  {
+    return false;
+  }
+
+  index = static_cast<int>(value);
+  return valid_room_index(index);
+}
+
 static inline bool valid_room_order_index(int indx)
 {
   return enigma::roomorder != nullptr &&
@@ -466,9 +490,9 @@ int room_goto(int indx)
 
 int room_restart()
 {
-  int indx=(int)room.rval.d;
+  int indx = -1;
   
-  if (!valid_room_index(indx))
+  if (!get_current_room_index(indx))
     return 0;
 
   enigma::room_switching_id = indx;
@@ -518,8 +542,8 @@ int room_goto_first(bool restart_game)
 
 int room_goto_next()
 {
-  const int current = (int)room.rval.d;
-if (!valid_room_index(current))
+  int current = -1;
+  if (!get_current_room_index(current))
     return 0;
 
   enigma::roomstruct *rit = enigma::roomdata[current];
@@ -537,8 +561,8 @@ if (!valid_room_index(current))
 
 int room_goto_previous()
 {
-  const int current = (int)room.rval.d;
-if (!valid_room_index(current))
+  int current = -1;
+  if (!get_current_room_index(current))
     return 0;
 
   enigma::roomstruct *rit = enigma::roomdata[current];
@@ -609,6 +633,15 @@ int room_set_background(int indx, int bind, bool vis, bool fore, bool back, doub
 {
 if (!valid_room_index(indx) || bind < 0 || bind >= 8)
     return 0;
+
+  if (!std::isfinite(x) ||
+      !std::isfinite(y) ||
+      !std::isfinite(hspeed) ||
+      !std::isfinite(vspeed) ||
+      !std::isfinite(alpha))
+  {
+    return 0;
+  }
     
   enigma::backstruct &bk = enigma::roomdata[indx]->backs[bind];
   bk.visible = vis;
@@ -627,8 +660,13 @@ if (!valid_room_index(indx) || bind < 0 || bind >= 8)
 
 int room_set_view(int indx, int vind, int vis, int xview, int yview, int wview, int hview, int xport, int yport, int wport, int hport, int hborder, int vborder, int hspeed, int vspeed, int obj)
 {
-if (!valid_room_index(indx) || vind < 0 || vind >= 8)     
+  if (!valid_room_index(indx) ||
+      vind < 0 || vind >= 8 ||
+      !enigma::valid_view_dimensions(wview, hview) ||
+      !enigma::valid_view_dimensions(wport, hport))
+  {
     return 0;
+  }
      
   enigma::viewstruct &vw = enigma::roomdata[indx]->views[vind];
   vw.start_vis = vis;
@@ -700,6 +738,16 @@ int room_tile_add_ext(int indx, int bck, int left, int top,
 {
 
   if (!valid_room_index(indx))
+    return 0;
+
+  if (!std::isfinite(xscale) ||
+      !std::isfinite(yscale) ||
+      !std::isfinite(alpha))
+  {
+    return 0;
+  }
+
+  if (width <= 0 || height <= 0)
     return 0;
 
 
@@ -814,8 +862,8 @@ int room_add()
   rm->createcode = NULL;
   rm->precreatecode = NULL;
 
-  enigma::viewstruct vw;
-  for (int i = 0; i < 8; i++)
+  enigma::viewstruct vw{};
+  for (int i = 0; i < 10; i++)
   {
     vw.start_vis = false;
     vw.area_x = 0;
@@ -834,8 +882,8 @@ int room_add()
     rm->views[i] = vw;
   }
 
-  enigma::backstruct bk;
-  for (int i = 0; i < 8; i++)
+  enigma::backstruct bk{};
+  for (int i = 0; i < 10; i++)
   {
     bk.visible = 0;
     bk.foreground = 0;
@@ -859,6 +907,8 @@ int room_add()
 
   return newrm;
   } catch (const std::bad_alloc&) {
+    return -1;
+  } catch (const std::length_error&) {	  
     return -1;
   }
 }
@@ -917,7 +967,7 @@ int room_duplicate(int indx, bool ass, int assroom)
   // Duplicate: append a new room.
   const size_t old_count = enigma::room_idmax;
 
-  if (old_count >
+  if (old_count >=
       static_cast<size_t>(std::numeric_limits<int>::max()))
   {
     return -1;
@@ -972,8 +1022,13 @@ int room_duplicate(int indx, bool ass, int assroom)
 
 int view_set(int vind, int vis, int xview, int yview, int wview, int hview, int xport, int yport, int wport, int hport, int hborder, int vborder, int hspeed, int vspeed, int obj)
 {
-  if (vind < 0 || vind >= 8)
+  if (vind < 0 || vind >= 8 ||
+      !enigma::valid_view_dimensions(wview, hview) ||
+      !enigma::valid_view_dimensions(wport, hport))
+  {
     return 0;
+  }
+   
   view_visible[vind] = vis;
   view_xview[vind] = xview;
   view_yview[vind] = yview;
@@ -991,25 +1046,53 @@ int view_set(int vind, int vis, int xview, int yview, int wview, int hview, int 
   return 1;
 }
 
+static inline int clamp_mouse_coordinate(long long value)
+{
+  return static_cast<int>(
+      std::max(
+          static_cast<long long>(std::numeric_limits<int>::min()),
+          std::min(
+              value,
+              static_cast<long long>(
+                  std::numeric_limits<int>::max()))));
+}
+
 int window_view_mouse_get_x(int id)
 {
   if (id < 0 || id >= 8)
     return window_mouse_get_x();
-  return window_mouse_get_x()+view_xview[id];
+
+  return clamp_mouse_coordinate(
+      static_cast<long long>(window_mouse_get_x()) +
+      static_cast<long long>(view_xview[id]));
 }
 
 int window_view_mouse_get_y(int id)
 {
   if (id < 0 || id >= 8)
     return window_mouse_get_y();
-  return window_mouse_get_y()+view_yview[id];
+
+  return clamp_mouse_coordinate(
+      static_cast<long long>(window_mouse_get_y()) +
+      static_cast<long long>(view_yview[id]));
 }
 
 void window_view_mouse_set(int id, int x, int y)
 {
   if (id < 0 || id >= 8)
     return;
-  window_mouse_set(window_get_x() + x + view_xview[id],window_get_y() + y + view_yview[id]);
+
+  const int mouse_x = clamp_mouse_coordinate(
+      static_cast<long long>(window_get_x()) +
+      static_cast<long long>(x) +
+      static_cast<long long>(view_xview[id]));
+
+  const int mouse_y = clamp_mouse_coordinate(
+      static_cast<long long>(window_get_y()) +
+      static_cast<long long>(y) +
+      static_cast<long long>(view_yview[id]));
+
+  window_mouse_set(mouse_x, mouse_y);
 }
 
 //NOTE: GM8.1 allowed the mouse to go outside the window, for basically all mouse functions and constants, Studio however
@@ -1021,7 +1104,7 @@ void window_view_mouse_set(int id, int x, int y)
 int window_views_mouse_get_x() {
   gs_scalar sx;
   const gs_scalar scaled_width = window_get_region_width_scaled();
-  if (scaled_width == 0)
+  if (scaled_width <= 0)
     return window_mouse_get_x();
 
   sx = (window_get_width() - scaled_width) / 2;
@@ -1029,7 +1112,7 @@ int window_views_mouse_get_x() {
           (window_get_region_width() / scaled_width);
   if (view_enabled) {
     if (view_current < 0 || view_current >= 8 ||
-        view_wport[view_current] == 0)
+        view_wport[view_current] <= 0)
       return x;
     x = view_xview[view_current]+((x-view_xport[view_current])/(double)view_wport[view_current])*view_wview[view_current];
   }
@@ -1053,7 +1136,7 @@ int window_views_mouse_get_x() {
 int window_views_mouse_get_y() {
   gs_scalar sy;
   const gs_scalar scaled_height = window_get_region_height_scaled();
-  if (scaled_height == 0)
+  if (scaled_height <= 0)
     return window_mouse_get_y();
 
   sy = (window_get_height() - scaled_height) / 2;
@@ -1061,7 +1144,7 @@ int window_views_mouse_get_y() {
           (window_get_region_height() / scaled_height);
   if (view_enabled) {
     if (view_current < 0 || view_current >= 8 ||
-        view_hport[view_current] == 0)
+        view_hport[view_current] <= 0)
       return y;
     y = view_yview[view_current]+((y-view_yport[view_current])/(double)view_hport[view_current])*view_hview[view_current];
   }
@@ -1134,12 +1217,10 @@ namespace enigma
               (window_get_region_height() / scaled_height);
 
     if (view_enabled) {
-    if (view_current < 0 || view_current >= 8)
-        return;
 
       for (int i = 0; i < 8; i++) {
         if (view_visible[i]) {
-		  if (view_wport[i] == 0 || view_hport[i] == 0)
+		  if (view_wport[i] <= 0 || view_hport[i] <= 0)
             continue;
           if (mouse_x >= view_xport[i] && mouse_x < view_xport[i]+view_wport[i] &&  mouse_y >= view_yport[i] && mouse_y < view_yport[i]+view_hport[i]) {
              mouse_x = view_xview[i]+((mouse_x-view_xport[i])/(double)view_wport[i])*view_wview[i];
@@ -1148,8 +1229,12 @@ namespace enigma
           }
         }
       }
-      if (view_wport[view_current] == 0 ||
-          view_hport[view_current] == 0)
+
+      if (view_current < 0 || view_current >= 8)
+        return;
+
+      if (view_wport[view_current] <= 0 ||
+          view_hport[view_current] <= 0)
         return;
 
       mouse_x = view_xview[view_current]+((mouse_x-view_xport[view_current])/(double)view_wport[view_current])*view_wview[view_current];
@@ -1159,21 +1244,34 @@ namespace enigma
 
   void rooms_switch()
   {
-    if (enigma_user::room_exists(room_switching_id)) {
-      int local_room_switching_id = room_switching_id;
-      bool local_room_switching_restartgame = room_switching_restartgame;
-      room_switching_id = -1;
-      room_switching_restartgame = false;
-      enigma::roomdata[local_room_switching_id]->gotome(local_room_switching_restartgame);
-    }
+    const int target_room = room_switching_id;
+    const bool restart_game = room_switching_restartgame;
+
+    room_switching_id = -1;
+    room_switching_restartgame = false;
+
+    if (!enigma_user::room_exists(target_room))
+      return;
+
+    enigma::roomdata[target_room]->gotome(restart_game);}
   }
 
   void game_start() {
-	if (enigma::room_loadtimecount <= 0 || !enigma::roomorder)
+    if (enigma::room_loadtimecount <= 0 ||
+        enigma::roomorder == nullptr ||
+        enigma::roomdata == nullptr)
       return;
-    enigma::roomstruct *rit = *enigma::roomorder;
-    if (!rit)
+
+    enigma::roomstruct *rit = enigma::roomorder[0];
+
+    if (rit == nullptr ||
+        rit->id < 0 ||
+        static_cast<size_t>(rit->id) >= enigma::room_idmax ||
       return; 
-    enigma::roomdata[rit->id]->gotome(true);
+
+    if (enigma::roomdata[rit->id] != rit)
+      return;
+
+    rit->gotome(true)
   }
 }
