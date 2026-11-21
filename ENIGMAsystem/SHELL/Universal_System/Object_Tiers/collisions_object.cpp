@@ -27,6 +27,7 @@
 #include "Universal_System/Resources/sprites_internal.h"
 
 #include <cmath>
+#include <limits>
 #include <floatcomp.h>
 
 using enigma_user::sprite_get_bbox_right_relative;
@@ -36,9 +37,34 @@ using enigma_user::sprite_get_bbox_bottom_relative;
 
 namespace enigma
 {
+	///safe bounding box conversion helper function
+      static inline int bbox_to_int(double value)
+    {
+        if (std::isnan(value))
+            return 0;
+
+        const double min_value =
+            static_cast<double>(std::numeric_limits<int>::min());
+
+        const double max_value =
+            static_cast<double>(std::numeric_limits<int>::max());
+
+        if (value <= min_value)
+            return std::numeric_limits<int>::min();
+        if (value >= max_value)
+            return std::numeric_limits<int>::max();
+
+        return static_cast<int>(value);
+    }
+    	
     static inline int bbox_quadrant(double angle)
     {
-        return int(fmod(fmod(angle, 360) + 360, 360) / 90.0);
+      if (!std::isfinite(angle))
+          return 0;
+
+       return static_cast<int>(
+        std::fmod(std::fmod(angle, 360.0) + 360.0, 360.0) / 90.0
+       );
     }
 
     int object_collisions::$bbox_left() const
@@ -48,7 +74,7 @@ namespace enigma
                    ((mask_index >= 0 ? sprite_get_bbox_left_relative(mask_index)*image_xscale : (sprite_index >= 0 ? sprite_get_bbox_left_relative(sprite_index)*image_xscale : 0)) + x + .5) :
                    ((mask_index >= 0 ? (sprite_get_bbox_right_relative(mask_index) + 1)*image_xscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_right_relative(sprite_index) + 1)*image_xscale - 1: 0)) + x + .5);
 
-        const double arad = image_angle*(M_PI/180.0);
+        const double arad = image_angle*(std::acos(-1.0)/180.0);
         const int quad = bbox_quadrant(image_angle);
         double w, h;
         w = ((image_xscale >= 0)^(quad == 1 || quad == 2)) ?
@@ -58,7 +84,7 @@ namespace enigma
             (mask_index >= 0 ? sprite_get_bbox_top_relative(mask_index)*image_yscale : (sprite_index >= 0 ? sprite_get_bbox_top_relative(sprite_index)*image_yscale : 0)) :
             (mask_index >= 0 ? (sprite_get_bbox_bottom_relative(mask_index) + 1)*image_yscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_bottom_relative(sprite_index) + 1)*image_yscale - 1: 0));
 
-        return cos(arad)*w + sin(arad)*h + x + .5;
+        return bbox_to_int(cos(arad)*w + sin(arad)*h + x + .5);
     }
 
     int object_collisions::$bbox_right() const
@@ -78,7 +104,7 @@ namespace enigma
             (mask_index >= 0 ? (sprite_get_bbox_bottom_relative(mask_index) + 1)*image_yscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_bottom_relative(sprite_index) + 1)*image_yscale - 1: 0)) :
             (mask_index >= 0 ? sprite_get_bbox_top_relative(mask_index)*image_yscale : (sprite_index >= 0 ? sprite_get_bbox_top_relative(sprite_index)*image_yscale : 0));
 
-        return cos(arad)*w + sin(arad)*h + x + .5;
+        return bbox_to_int(cos(arad)*w + sin(arad)*h + x + .5);
     }
 
     int object_collisions::$bbox_top() const
@@ -88,7 +114,7 @@ namespace enigma
                 ((mask_index >= 0 ? sprite_get_bbox_top_relative(mask_index)*image_yscale : (sprite_index >= 0 ? sprite_get_bbox_top_relative(sprite_index)*image_yscale : 0)) + y + .5):
                 ((mask_index >= 0 ? (sprite_get_bbox_bottom_relative(mask_index) + 1)*image_yscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_bottom_relative(sprite_index) + 1)*image_yscale - 1: 0)) + y + .5);
 
-        const double arad = image_angle*(M_PI/180.0);
+        const double arad = image_angle*(std::acos(-1.0)/180.0);
         const int quad = bbox_quadrant(image_angle);
         double w, h;
         w = ((image_xscale >= 0)^(quad == 2 || quad == 3)) ?
@@ -108,7 +134,7 @@ namespace enigma
                 ((mask_index >= 0 ? (sprite_get_bbox_bottom_relative(mask_index) + 1)*image_yscale - 1 : (sprite_index >= 0 ? (sprite_get_bbox_bottom_relative(sprite_index) + 1)*image_yscale - 1: 0)) + y + .5) :
                 ((mask_index >= 0 ? sprite_get_bbox_top_relative(mask_index)*image_yscale : (sprite_index >= 0 ? sprite_get_bbox_top_relative(sprite_index)*image_yscale : 0)) + y + .5);
 
-        const double arad = image_angle*(M_PI/180.0);
+        const double arad = image_angle*(std::acos(-1.0)/180.0);
         const int quad = bbox_quadrant(image_angle);
         double w, h;
         w = ((image_xscale >= 0)^(quad == 2 || quad == 3)) ?
