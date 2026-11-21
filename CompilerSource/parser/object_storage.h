@@ -54,7 +54,10 @@ struct ParsedCode {
   // Allows us to add to locals when parsing the code.
   ParsedScope *my_scope;
 
-  ParsedCode(ParsedScope *scope): my_scope(scope) {}
+  ParsedCode(ParsedScope *scope):
+    strc(0),
+    otherObjId(-1),
+    my_scope(scope) {}
 };
 struct ParsedEvent : ParsedCode {
   Event ev_id;
@@ -134,8 +137,11 @@ class EventIndex {
 
  public:
   bool declare(ParsedEvent *ev) {
+  if (ev == nullptr)
+    return false;	  
     auto i = mapping_.insert({ev->ev_id, ev});
     return i.first->second;
+    return i.second;
   }
 
   typedef ValueIterator<decltype(mapping_)> iterator;
@@ -168,6 +174,8 @@ class EventGroupIndex {
     return i.first->second;
   }
   void declare(ParsedEvent *ev) {
+    if (ev == nullptr)
+      return	  
     ParsedEventGroup &g = insert(ev->ev_id);
     if (ev->ev_id.IsStacked() || g.empty()) {
       g.push_back(ev);
@@ -281,7 +289,10 @@ struct parsed_object : ParsedScope {
   // This explicitly excludes transitive inheritance! To achieve that,
   // you must inherit from each object in the chain.
   void InheritFrom(parsed_object *other) {
-    for (const auto &e : other->all_events) Inherit(e.ev_id);
+    if (other == nullptr)
+      return;	  
+    for (const auto &e : other->all_events)
+      Inherit(e.ev_id);
   }
   // Checks whether this event or stack is inherited from another object.
   bool InheritsAny(const EventGroupKey &e) const {
@@ -348,7 +359,7 @@ struct parsed_timeline {
 
 struct parsed_room {
   struct parsed_icreatecode {
-    ParsedCode* code;
+    ParsedCode* code = nullptr;
     string object_name;
   };
   string name;

@@ -64,11 +64,17 @@ bool decquad::operator!= (const decquad& x) const {
   return type != x.type or prefix != x.prefix or suffix != x.suffix or value != x.value;
 }
 
-parsed_object::parsed_object(): parent(NULL) {}
+parsed_object::parsed_object():
+    id(0),
+    visible(false),
+    solid(false),
+    persistent(false),
+    depth(0.0),
+    parent(NULL) {}
 parsed_object::parsed_object(string n, int i, string s, string m, string p,
                              bool vis, bool sol, double d,bool pers):
     name(n), id(i), sprite_name(s), mask_name(m), parent_name(p), visible(vis),
-    solid(sol), persistent(pers), depth(d), parent(NULL) {}
+    solid(sol), persistent(pers), depth(d), parent(nullptr) {}
 
 void ParsedScope::copy_from(const ParsedScope &source,
                             const string &sourcename, const string &destname) {
@@ -145,6 +151,8 @@ void CompileState::add_dot_accessed_local(string name) {
 
   int maxvotes = 0; // The highest number of votes on a type for this variable
   for (parsed_object *obj : parsed_objects) {
+    if (obj == nullptr)
+      continue;	  
     msi::iterator itt = obj->locals.find(name); // Find a variable by this name
     if (itt != obj->locals.end() and itt->second.type != "") // If found, and indeed declared locally
     {
