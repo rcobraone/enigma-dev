@@ -33,20 +33,18 @@ typedef size_t pt;
 
 string tostring(int val)
 {
-  char a[12];
-  sprintf(a,"%d",val);
-  return a;
+return std::to_string(val);
 }
 string tostringd(double val)
 {
-  char a[24];
-  sprintf(a,"%f",val);
+  char a[64];
+  snprintf(a,sizeof(a),"%f",val);
   return a;
 }
 string tostringv(void* val)
 {
-  char a[24];
-  sprintf(a,"%p",val);
+  char a[64];
+  snprintf(a,sizeof(a),"%p",val);
   return a;
 }
 
@@ -62,9 +60,12 @@ string arraybounds_as_str(string str)
   return ret;
 }
 
-int string_count(char c, char* str)
+int string_count(char c, const char* str)
 {
     int occ = 0;
+    if (!str)
+        return 0;
+        
     while (*str) occ+=*(str++)==c;
     return occ;
 }
