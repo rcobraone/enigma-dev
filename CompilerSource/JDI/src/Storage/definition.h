@@ -521,11 +521,18 @@ namespace jdi {
       spec_key key;
       arg_key filter;
       definition_template *spec_temp;
+      
       //specialization(definition_template *stemp, const arg_key &specialization_key):
       //  key(stemp, specialization_key), spec_temp(stemp) {}
       specialization(size_t big_count, size_t small_count, definition_template* spect):
         key(big_count, small_count), filter(), spec_temp(spect) {}
-      specialization(const specialization&);
+      specialization(const specialization &other, definition_template *spect):
+        key(other.key, false), filter(other.filter), spec_temp(spect) {}       
+      specialization(const specialization&)
+      specialization(
+        const specialization &other,
+        definition_template *new_spec_temp
+      );      
       ~specialization();
     };
     
@@ -629,7 +636,7 @@ namespace jdi {
     A definition for atomic types.
   */
   struct definition_atomic: definition_scope {
-    definition* duplicate(remap_set &n);
+    virtual definition* duplicate(remap_set &n) const;
     
     string kind() const;
     void remap(remap_set &n, const error_context &errc);

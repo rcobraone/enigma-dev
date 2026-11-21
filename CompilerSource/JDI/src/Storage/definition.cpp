@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <typeinfo>
 #include <algorithm>
+#include <functional>
 #include <System/builtins.h>
 #include <Parser/handlers/handle_function_impl.h>
 #include <API/compile_settings.h>
@@ -40,7 +41,12 @@ namespace jdi {
   definition::~definition() {}
   
   ptrdiff_t definition::defcmp(definition *d1, definition *d2) {
-    return d1 - d2;
+    if (d1 == d2)
+      return 0;
+    return std::less<const void*>()(
+      static_cast<const void*>(d1),
+      static_cast<const void*>(d2)
+    ) ? -1 : 1;
   }
   
   definition_typed::definition_typed(string n, definition* p, definition* tp, unsigned int typeflags, int flgs): definition(n,p,flgs | DEF_TYPED), type(tp), referencers(), modifiers(typeflags) {
@@ -187,7 +193,7 @@ namespace jdi {
       if ((res = n->use->find_local(sname)))
         return res;
     for (vector<ancestor>::iterator ait = ancestors.begin(); ait != ancestors.end(); ++ait)
-      if ((res = ait->def->find_local(sname)))
+      if (ait->def && (res = ait->def->find_local(sname)))
         return res;
     if (parent == NULL)
       return NULL;
@@ -248,7 +254,7 @@ namespace jdi {
   }
   definition *definition_hypothetical::get_local(string sname) {
     required_flags |= DEF_CLASS;
-    return def? context_p->handle_hypothetical_access(this, sname) : NULL;
+    return (def && context_p)? context_p->handle_hypothetical_access(this, sname) : NULL;
   }
   
   definition_scope::using_node *definition_scope::use_namespace(definition_scope *ns) {
@@ -278,7 +284,7 @@ namespace jdi {
   definition_scope::definition_scope(string name_, definition *parent_, unsigned int flags_): definition(name_,parent_,flags_ | DEF_SCOPE), using_front(NULL), using_back(NULL) {}
   definition_scope::~definition_scope() {
     for (defiter it = members.begin(); it != members.end(); it++)
-      if (!(it->second->flags & (DEF_ENUM | DEF_CLASS | DEF_UNION)))
+    if (it->second && !(it->second->flags & (DEF_ENUM | DEF_CLASS | DEF_UNION)))
       delete it->second;
     for (using_node *n = using_front; n; ) {
       using_node *dm = n; n = n->next;
@@ -299,7 +305,7 @@ namespace jdi {
   }
   
   definition_class::ancestor::ancestor(unsigned protection_level, definition_class* inherit_from): protection(protection_level), def(inherit_from) {}
-  definition_class::ancestor::ancestor() {}
+  definition_class::ancestor::ancestor(): protection(0), def(NULL) {}
   definition_class::definition_class(string classname, definition_scope* prnt, unsigned flgs): definition_scope(classname, prnt, flgs), instance_of(NULL) {}
   
   definition_union::definition_union(string classname, definition_scope* prnt, unsigned flgs): definition_scope(classname, prnt, flgs) {}
@@ -330,7 +336,17 @@ namespace jdi {
       delete *it;
   }
   
-  definition_template::specialization::specialization(const specialization &x): key(x.key, false), spec_temp(x.spec_temp) {}
+  definition_template::specialization::specialization(
+      const specialization &x, definition_template *new_spec_temp):
+    key(x.key, false),
+    filter(x.filter),
+    spec_temp(new_spec_temp) {}
+
+   definition_template::specialization::specialization(
+    const specialization &x,
+    definition_template *st
+   ):
+  key(x.key, false), filter(x.filter), spec_temp(st) {}    
   definition_template::specialization::~specialization() { delete spec_temp; }
   
   definition_tempparam::definition_tempparam(string p_name, definition_scope* p_parent, unsigned p_flags): definition_class(p_name, p_parent, p_flags | DEF_TEMPPARAM | DEF_DEPENDENT), default_assignment(NULL) {}
@@ -344,18 +360,54 @@ namespace jdi {
       cerr << "Maximum nested template depth of 128 (GCC default) exceeded. Bailing." << endl;
       return NULL;
     }
+
+    const size_t keyc = key.size();
+    if (keyc != params.size()) {
+      errc.report_error(
+        "Attempt to instantiate template with an incorrect number of parameters; "
+        "passed " + value(long(keyc)).toString() +
+        ", required " + value(long(params.size())).toString()
+      );
+      return NULL;
+    }
+    
+    if (!def) {
+      errc.report_error(
+        "Cannot instantiate template `" + name + "` without a definition"
+      );
+      return NULL;
+    }  
+    
     nest_ this_nest;
     
     // TODO: Move this specialization search into the not-found if (ins.second) below, then add the specialization to the instantiation map.
     // TODO: Be careful not to double free those specializations. You may need to keep a separate map for regular instantiations to free.
     specialization *spec = find_specialization(key);
     if (spec) {
+      if (!spec->spec_temp) {
+        errc.report_error(
+          "Template `" + name +
+          "` contains an invalid specialization without a definition"
+        );
+        return NULL;
+      }
+		
       arg_key speckey = spec->key.get_key(key);
       return spec->spec_temp->instantiate(speckey, errc);
     }
-    
+  
+      
     pair<institer, bool> ins = instantiations.insert(pair<arg_key, instantiation*>(key, NULL));
     if (ins.second) {
+      if (!def) {
+        errc.report_error(
+          "Attempt to instantiate template `" + name +
+          "` without a definition."
+        );
+        instantiations.erase(ins.first);
+        return NULL;
+      }
+		
       //cout << "Instantiating new " << name << "<" << key.toString() << "> (abstract: " << key.is_abstract() << ")" << endl;
       remap_set n;
       size_t ind = 0;
@@ -371,13 +423,7 @@ namespace jdi {
         definition *ndef = key.new_definition(ind++, (*it)->name, this);
         ins.first->second->parameter_defs.push_back(ndef);
         n[*it] = ndef;
-      }
-      size_t keyc = key.size();
-      if (keyc != params.size()) {
-        errc.report_error("Attempt to instantiate template with an incorrect number of parameters; passed " + value(long(key.end() - key.begin())).toString() + ", required " + value(long(params.size())).toString());
-        FATAL_RETURN(NULL);
-      }
-      
+      }     
       ntemp->remap(n, errc);
     }
     
@@ -417,10 +463,23 @@ namespace jdi {
     for (size_t i = 0; i < ind_count; ++i)
     {
       int matchc = *arg_inds[i]; // The number of arguments this is matching
+
+      if (matchc == 0)
+        continue;
+     
       int o = arg_inds[i][1];
-      for (size_t j = 1; j <= *arg_inds[i]; ++j)
-        if (k[arg_inds[i][j]] != k[o])
+      if (static_cast<size_t>(o) >= k.size())
+        return 0;
+      
+     for (size_t j = 1; j <= *arg_inds[i]; ++j)
+      {
+        const unsigned index = arg_inds[i][j];
+        if (static_cast<size_t>(index) >= k.size())
           return 0;
+
+        if (k[index] != k[o])
+          return 0;
+    }      
       if (matchc > 1)
         tmerit += matchc;
     }
@@ -507,6 +566,7 @@ namespace jdi {
     value sz = 0L;
     for (defiter it = members.begin(); it != members.end(); ++it)
       if (not(it->second->flags & DEF_TYPENAME))
+      if (it->second && !(it->second->flags & DEF_TYPENAME))
       {
         value as = it->second->size_of(errc);
         if (as.type == VT_INTEGER && as) // TODO: FIXME: This entire size thing is beans; an alignof() is needed.
@@ -528,6 +588,10 @@ namespace jdi {
   }
 
   value definition_enum::size_of(const error_context &errc) {
+    if (!type) {
+      errc.report_error("Cannot determine size of enum `" + name + "` without an underlying type");
+      return 0L;
+    }	  
     return type->size_of(errc);
   }
 
@@ -540,6 +604,7 @@ namespace jdi {
     size_t sz = 0;
     for (defiter it = members.begin(); it != members.end(); ++it)
       if (not(it->second->flags & DEF_TYPENAME)) {
+	  if (it->second && !(it->second->flags & DEF_TYPENAME)) {  
         value szadd = it->second->size_of(errc);
         if (szadd.type == VT_INTEGER)
           sz += (long)szadd;
@@ -608,7 +673,10 @@ namespace jdi {
       bool first = true;
       for (vector<const_pair>::const_iterator it = constants.begin(); it != constants.end(); ++it) {
         if (!first) res += ",\n";
-        res += sinds + it->def->name + " = " + it->def->value_of.toString();
+        if (it->def)
+          res += sinds + it->def->name + " = " + it->def->value_of.toString();
+        else
+          res += sinds + "<invalid-enum-member>";
         first = false;
       }
       res += "\n" + inds + "}";
@@ -638,7 +706,9 @@ namespace jdi {
     if (levels) {
       res += "{\n";
       for (defiter_c it = members.begin(); it != members.end(); ++it)
-        res += it->second->toString(levels-1, indent+2) + "\n";
+        res += it->second
+          ? it->second->toString(levels-1, indent+2) + "\n"
+          : string(indent+2, ' ') + "<invalid-definition>\n";
       res += inds + "}";
     }
     else res += "{ ... }";
