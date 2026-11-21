@@ -58,6 +58,10 @@ int lang_CPP::compile_writeShaderData(const GameData &game, ParsedScope *EGMglob
 {
   (void) EGMglobal;  // Currently not needed.
   ofstream wto((codegen_directory/"Preprocessor_Environment_Editable/IDE_EDIT_shaderarrays.h").u8string().c_str(),ios_base::out);
+  if (!wto.is_open()) {
+    user << "Failed to open shader data output file." << flushl;
+    return E_ERROR_BUILD;
+  }
 
   wto << license << "#include \"Universal_System/shaderstruct.h\"\n" << "namespace enigma {\n";
   wto << "  std::vector<ShaderStruct> shaderstructarray = {\n";
