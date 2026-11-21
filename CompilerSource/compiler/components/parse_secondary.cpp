@@ -82,10 +82,12 @@ int lang_CPP::compile_parseSecondary(CompileState &state) {
   for (auto room : state.parsed_rooms) {
     if (room->creation_code) parser_secondary(state, room->creation_code);
     for (const auto &icc : room->instance_create_codes) {
-      parser_secondary(state, icc.second.code);
+      if (icc.second.code)
+        parser_secondary(state, icc.second.code);
     }
     for (const auto &icc : room->instance_precreate_codes) {
-      parser_secondary(state, icc.second.code);
+      if (icc.second.code)
+        parser_secondary(state, icc.second.code);
     }
   }
 
