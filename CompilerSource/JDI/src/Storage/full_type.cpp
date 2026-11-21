@@ -68,14 +68,10 @@ namespace jdi {
     return flags > other.flags; 
   }
   bool full_type::operator<= (const full_type& other) const {
-    if (definition::defcmp(other.def, def) < 0) return false;
-    if (other.refs < refs) return false;
-    return flags <= other.flags; 
+    return !(*this > other); 
   }
   bool full_type::operator>= (const full_type& other) const {
-    if (definition::defcmp(other.def, def) > 0) return false;
-    if (other.refs > refs) return false;
-    return flags >= other.flags; 
+    return !(*this < other);
   }
   
   string full_type::toString() const {
