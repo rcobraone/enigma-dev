@@ -67,38 +67,10 @@ void BinaryBuffer::Resize(unsigned size) {
 void BinaryBuffer::Seek(unsigned offset) {
   const unsigned buffer_size = GetSize();
 
-  if (buffer_size == 0) {
-    position = 0;
-    return;
-  }
-
-  switch (type) {
-    case enigma_user::buffer_grow:
-      if (offset >= buffer_size) {
-        if (offset == std::numeric_limits<unsigned>::max())
-          return;
-        const unsigned required_size = offset + 1;
-        if (static_cast<size_t>(required_size) > data.max_size())
-          return;
-
-        try {
-          data.resize(required_size, 0);
-        } catch (const std::bad_alloc&) {
-          return;
-        } catch (const std::length_error&) {
-          return;
-        }
-      }
-      position = offset;
-      return;
-
-    case enigma_user::buffer_wrap:
-      position = offset % buffer_size;
-      return;
-
-    default:
-      position = std::min(offset, buffer_size);
-      return;
+  if (type == enigma_user::buffer_wrap && buffer_size > 0) {
+    position = offset % buffer_size;
+  } else {
+    position = std::min(offset, buffer_size);
   }
 }
 
@@ -114,26 +86,8 @@ unsigned char BinaryBuffer::ReadByte() {
     position = static_cast<unsigned>((index + 1) % buffer_size);
     return byte;
   }
-  if (type == enigma_user::buffer_grow) {
-    if (position == std::numeric_limits<unsigned>::max())
-      return 0;
 
-    if (static_cast<size_t>(position) >= buffer_size) {
-      const size_t required_size = static_cast<size_t>(position) + 1;
-
-      if (required_size > data.max_size() ||
-          required_size > std::numeric_limits<unsigned>::max())
-        return 0;
-
-      try {
-        data.resize(required_size, 0);
-      } catch (const std::bad_alloc&) {
-        return 0;
-      } catch (const std::length_error&) {
-        return 0;
-      }
-    }
-  } else if (static_cast<size_t>(position) >= buffer_size) {
+  if (static_cast<size_t>(position) >= buffer_size) {
     return 0;
   }
 
@@ -261,10 +215,13 @@ int buffer_create(unsigned size, int type, unsigned alignment) {
 }
 
 void buffer_delete(int buffer) {
-  get_buffer(binbuff, buffer);
+  if (!enigma::buffer_valid(buffer))
+    return;
+  const size_t index = static_cast<size_t>(buffer);
+  enigma::BinaryBuffer* binbuff = enigma::buffers[index];
 
+  enigma::buffers[index] = nullptr;
   delete binbuff;
-  enigma::buffers[static_cast<size_t>(buffer)] = nullptr;
 }
 
 bool buffer_exists(int buffer) {
@@ -308,8 +265,15 @@ void buffer_copy(int src_buffer, unsigned src_offset, unsigned size,
       ? static_cast<size_t>(size)
       : src_size - source_offset;
 
-  const size_t copy_size =
+  size_t copy_size =
       std::min(static_cast<size_t>(size), available); 
+
+  // Avoid allocating temporary memory for bytes that
+  // cannot be written to a fixed-size destination.
+  if (!dst_wrap && !dst_grow) {
+    const size_t writable = dst_size - destination_offset;
+    copy_size = std::min(copy_size, writable);
+  }
 
   if (copy_size == 0)
     return;
@@ -773,6 +737,15 @@ void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned 
   if (type_size == 0)
     return;
 
+  // Use the same numeric-to-byte conversion as buffer_poke().
+  // Prepare the bytes before modifying the destination buffer.
+  std::vector<unsigned char> value_bytes;
+  try {
+    value_bytes = enigma::valToBytes(value, type_size);
+  } catch (const std::exception&) {
+    return;
+  }
+
   const size_t start = static_cast<size_t>(offset);
   const size_t count = static_cast<size_t>(size);
 
@@ -807,7 +780,7 @@ void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned 
 	   
     for (size_t i = 0; i < writable; ++i) {
       binbuff->data[index] =
-          static_cast<unsigned char>(value[i % type_size]);
+          value_bytes[i % value_bytes.size()];
           
       ++index;
       if (index == buffer_size)
@@ -824,7 +797,7 @@ void buffer_fill(int buffer, unsigned offset, int type, variant value, unsigned 
   
   for (size_t i = 0; i < writable; ++i)
     binbuff->data[start + i] =
-        static_cast<unsigned char>(value[i % type_size]);
+        value_bytes[i % value_bytes.size()];
 }
   
 void *buffer_get_address(int buffer) {
@@ -860,12 +833,143 @@ int buffer_get_type(int buffer) {
 }
 
 void buffer_get_surface(int buffer, int surface, int mode, unsigned offset, int modulo) {
-  //get_buffer(binbuff, buffer);
-  //TODO: Write this function
-  DEBUG_MESSAGE("Function unimplemented: buffer_get_surface", MESSAGE_TYPE::M_WARNING);
+  if (!enigma::buffer_valid(buffer)) {
+    DEBUG_MESSAGE("Invalid buffer passed to buffer_get_surface!",
+                  MESSAGE_TYPE::M_WARNING);
+    return;
+  }
+
+  if (!surface_exists(surface)) {
+    DEBUG_MESSAGE("Invalid surface passed to buffer_get_surface!",
+                  MESSAGE_TYPE::M_WARNING);
+    return;
+  }
+
+  if (mode != buffer_surface_copy) {
+    DEBUG_MESSAGE("Unsupported buffer_get_surface mode!",
+                  MESSAGE_TYPE::M_WARNING);
+    return;
+  }
+
+  if (modulo < 0) {
+    DEBUG_MESSAGE("Invalid negative surface modulo!",
+                  MESSAGE_TYPE::M_WARNING);
+    return;
+  }
+
+  enigma::BinaryBuffer* binbuff =
+      enigma::buffers[static_cast<size_t>(buffer)];
+
+  const int width = surface_get_width(surface);
+  const int height = surface_get_height(surface);
+
+  if (width <= 0 || height <= 0) {
+    DEBUG_MESSAGE("Surface has invalid dimensions!",
+                  MESSAGE_TYPE::M_WARNING);
+    return;
+  }
+
+  if (binbuff->alignment != 1) {
+    DEBUG_MESSAGE("buffer_get_surface requires alignment 1!",
+                  MESSAGE_TYPE::M_WARNING);
+  }
+
+  const size_t w = static_cast<size_t>(width);
+  const size_t h = static_cast<size_t>(height);
+  const size_t max_size = std::numeric_limits<size_t>::max();
+  const size_t bytes_per_pixel = 4;
+
+  if (w > max_size / bytes_per_pixel)
+    return;
+
+  const size_t row_bytes = w * bytes_per_pixel;
+  const size_t row_stride =
+      row_bytes + static_cast<size_t>(modulo);
+
+  if (row_stride < row_bytes)
+    return;
+
+  if (h - 1 > (max_size - row_bytes) / row_stride)
+    return;
+
+  const size_t image_bytes =
+      (h - 1) * row_stride + row_bytes;
+
+  const size_t start = static_cast<size_t>(offset);
+
+  if (image_bytes > max_size - start)
+    return;
+
+  const size_t required_size = start + image_bytes;
+
+  if (required_size >
+      static_cast<size_t>(std::numeric_limits<unsigned>::max()))
+    return;
+
+  if (binbuff->type == buffer_wrap) {
+    DEBUG_MESSAGE("buffer_get_surface does not support buffer_wrap!",
+                  MESSAGE_TYPE::M_WARNING);
+    return;
+  }
+
+  if (binbuff->type == buffer_grow) {
+    if (required_size > binbuff->data.max_size())
+      return;
+
+    try {
+      if (required_size > binbuff->data.size())
+        binbuff->data.resize(required_size, 0);
+    } catch (const std::bad_alloc&) {
+      return;
+    } catch (const std::length_error&) {
+      return;
+    }
+  } else if (required_size > binbuff->data.size()) {
+    DEBUG_MESSAGE("Buffer allocated with insufficient length!",
+                  MESSAGE_TYPE::M_WARNING);
+    return;
+  }
+
+  unsigned fullwidth = 0;
+  unsigned fullheight = 0;
+
+  std::unique_ptr<unsigned char[]> pixels(
+      enigma::graphics_copy_texture_pixels(
+          surface_get_texture(surface),
+          &fullwidth,
+          &fullheight));
+
+  if (!pixels)
+    return;
+
+  if (fullwidth < static_cast<unsigned>(width) ||
+      fullheight < static_cast<unsigned>(height))
+    return;
+
+  const size_t source_stride =
+      static_cast<size_t>(fullwidth) * bytes_per_pixel;
+
+  for (size_t y = 0; y < h; ++y) {
+    std::copy_n(
+        pixels.get() + y * source_stride,
+        row_bytes,
+        binbuff->data.begin() + start + y * row_stride);
+  }
 }
 
 void buffer_set_surface(int buffer, int surface, int mode, unsigned offset, int modulo) {
+  if (!enigma::buffer_valid(buffer)) {
+    DEBUG_MESSAGE("Invalid buffer passed to buffer_set_surface!",
+                  MESSAGE_TYPE::M_WARNING);
+    return;
+  }
+
+  if (!surface_exists(surface)) {
+    DEBUG_MESSAGE("Invalid surface passed to buffer_set_surface!",
+                  MESSAGE_TYPE::M_WARNING);
+    return;
+  }
+
   int tex = surface_get_texture(surface);
   int wid = surface_get_width(surface);
   int hgt = surface_get_height(surface);
@@ -876,7 +980,7 @@ void buffer_set_surface(int buffer, int surface, int mode, unsigned offset, int 
   }
 
   const std::uint64_t bytes_per_pixel =
-      static_cast<std::uint64_t>(buffer_sizeof(buffer_u64));
+      static_cast<std::uint64_t>(buffer_sizeof(buffer_u32));
   const std::uint64_t width = static_cast<std::uint64_t>(wid);
   const std::uint64_t height = static_cast<std::uint64_t>(hgt);
   const std::uint64_t uint64_max =
@@ -977,8 +1081,15 @@ unsigned buffer_sizeof(int type) {
 }
 
 int buffer_tell(int buffer) {
-  get_bufferr(binbuff, buffer, -1);
-  return binbuff->position;
+
+  const unsigned position = binbuff->position;
+  const unsigned max_position =
+      static_cast<unsigned>(std::numeric_limits<int>::max());
+
+  if (position > max_position)
+    return std::numeric_limits<int>::max();
+
+  return static_cast<int>(position);
 }
 
 variant buffer_peek(int buffer, unsigned offset, int type) {
@@ -986,7 +1097,7 @@ variant buffer_peek(int buffer, unsigned offset, int type) {
 
   const size_t buffer_size = binbuff->data.size();
   const size_t start = static_cast<size_t>(offset);
-  const unsigned saved_position = binbuff->position;
+
   if (buffer_size == 0)
     return type == buffer_string ? variant("") : variant(0); 
 
@@ -1188,10 +1299,15 @@ void buffer_poke(int buffer, unsigned offset, int type, variant value) {
   };
 
   if (type == buffer_string) {
-    const unsigned length =
-        static_cast<unsigned>(value.string_length());
+    const size_t length = value.string_length();
 
-    for (unsigned i = 0; i <= length; ++i) {
+    // The buffer position is represented by unsigned.
+    // Reject strings whose length cannot be represented safely.
+    if (length >=
+        static_cast<size_t>(std::numeric_limits<unsigned>::max()))
+      return;
+
+    for (size_t i = 0; i <= length; ++i) {
       const unsigned char byte =
           static_cast<unsigned char>(value.char_at(i));
 
@@ -1204,7 +1320,9 @@ void buffer_poke(int buffer, unsigned offset, int type, variant value) {
 
     const size_t alignment = binbuff->alignment;
     const size_t padding =
-        alignment > 0 ? (alignment - ((length + 1) % alignment)) % alignment : 0;
+        alignment > 0
+            ? (alignment - ((length % alignment + 1) % alignment)) % alignment
+            : 0;
 
     for (size_t i = 0; i < padding; ++i) {
       if (!write_byte(0))
@@ -1251,6 +1369,8 @@ bool decode_base64(const std::string& input,
       "abcdefghijklmnopqrstuvwxyz"
       "0123456789+/";
 
+  output.clear();
+
   if (input.size() % 4 != 0)
     return false;
 
@@ -1258,8 +1378,6 @@ bool decode_base64(const std::string& input,
 
   if (groups > output.max_size() / 3)
     return false;
-
-  output.clear();
 
   try {
     output.reserve(groups * 3);
@@ -1269,7 +1387,8 @@ bool decode_base64(const std::string& input,
       unsigned int padding = 0;
 
       for (unsigned int j = 0; j < 4; ++j) {
-        const char c = input[i + j];
+        const unsigned char c =
+            static_cast<unsigned char>(input[i + j]);
 
         if (c == '=') {
           if (j < 2)
@@ -1284,7 +1403,7 @@ bool decode_base64(const std::string& input,
 
         const char* found = std::strchr(alphabet, c);
 
-        if (!found)
+        if (!found || found == alphabet + 64)
           return false;
 
         values[j] =
@@ -1377,8 +1496,81 @@ int buffer_base64_decode(string str) {
 }
 
 int buffer_base64_decode_ext(int buffer, string str, unsigned offset) {
-  //get_bufferr(binbuff, buffer, -1);
-  //TODO: Write this function
+  if (!enigma::buffer_valid(buffer))
+    return 0;
+
+  std::vector<unsigned char> decoded;
+  if (!decode_base64(str, decoded))
+    return 0;
+
+  if (decoded.empty())
+    return 0;
+
+  enigma::BinaryBuffer* binbuff =
+      enigma::buffers[static_cast<size_t>(buffer)];
+
+  const size_t start = static_cast<size_t>(offset);
+
+  if (binbuff->type == buffer_grow) {
+    const size_t max_buffer_size =
+        static_cast<size_t>(std::numeric_limits<unsigned>::max());
+
+    if (start > max_buffer_size ||
+        decoded.size() > max_buffer_size - start)
+      return 0;
+
+    const size_t required_size = start + decoded.size();
+
+    if (required_size > binbuff->data.max_size())
+      return 0;
+
+    try {
+      if (required_size > binbuff->data.size())
+        binbuff->data.resize(required_size, 0);
+    } catch (const std::bad_alloc&) {
+      return 0;
+    } catch (const std::length_error&) {
+      return 0;
+    }
+
+    std::copy(
+        decoded.begin(),
+        decoded.end(),
+        binbuff->data.begin() + start);
+
+    return 0;
+  }
+
+  const size_t buffer_size = binbuff->data.size();
+
+  if (buffer_size == 0)
+    return 0;
+
+  if (binbuff->type == buffer_wrap) {
+    size_t position = start % buffer_size;
+
+    for (const unsigned char byte : decoded) {
+      binbuff->data[position] = byte;
+      ++position;
+
+      if (position == buffer_size)
+        position = 0;
+    }
+
+    return 0;
+  }
+
+  if (start >= buffer_size)
+    return 0;
+
+  const size_t writable =
+      std::min(decoded.size(), buffer_size - start);
+
+  std::copy_n(
+      decoded.begin(),
+      writable,
+      binbuff->data.begin() + start);
+
   return 0;
 }
 
