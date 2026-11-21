@@ -34,8 +34,25 @@ using namespace std;
 using namespace jdi;
 using namespace jdip;
 
+static void replace_macro(jdi::macro_map &macros,
+                          const string &name,
+                          jdip::macro_type *replacement)
+{
+  jdi::macro_iter it = macros.find(name);
+  if (it != macros.end()) {
+    jdip::macro_type::free(it->second);
+    it->second = replacement;
+    return;
+  }
+
+  macros.insert(make_pair(name, replacement));
+}
+
 void context::read_macros(const char* filename)
 {
+  if (filename == nullptr || *filename == '\0')
+    return;
+	
   ifstream in(filename);
   if (!in.is_open())
     return;
@@ -43,23 +60,27 @@ void context::read_macros(const char* filename)
   in.close();
 }
 void context::add_macro(string definiendum, string definiens) {
-  macros[definiendum] = (macro_type*)new macro_scalar(definiendum, definiens);
+  replace_macro(macros, definiendum,
+                new macro_scalar(definiendum, definiens));
 }
 void context::add_macro_func(string definiendum, string definiens) {
-  macros[definiendum] = (macro_type*)new macro_function(definiens);
+  replace_macro(macros, definiendum,
+                new macro_function(definiendum, definiens));
 }
 void context::add_macro_func(string definiendum, string p1, string definiens, bool variadic)
 {
   vector<string> arglist;
   arglist.push_back(p1);
-  macros[definiendum] = (macro_type*)new macro_function(definiendum, arglist, definiens, variadic);
+  replace_macro(macros, definiendum,
+                new macro_function(definiendum, arglist, definiens, variadic));
 }
 void context::add_macro_func(string definiendum, string p1, string p2, string definiens, bool variadic)
 {
   vector<string> arglist;
   arglist.push_back(p1);
   arglist.push_back(p2);
-  macros[definiendum] = (macro_type*)new macro_function(definiendum, arglist, definiens, variadic);
+  replace_macro(macros, definiendum,
+                new macro_function(definiendum, arglist, definiens, variadic));
 }
 void context::add_macro_func(string definiendum, string p1, string p2, string p3, string definiens, bool variadic)
 {
@@ -67,7 +88,8 @@ void context::add_macro_func(string definiendum, string p1, string p2, string p3
   arglist.push_back(p1);
   arglist.push_back(p2);
   arglist.push_back(p3);
-  macros[definiendum] = (macro_type*)new macro_function(definiendum, arglist, definiens, variadic);
+  replace_macro(macros, definiendum,
+                new macro_function(definiendum, arglist, definiens, variadic));
 }
 
 #ifndef MAX_PATH
@@ -79,6 +101,9 @@ void context::read_search_directories(const char* filename) {
 }
 void context::read_search_directories_gnu(const char* filename, const char* begin_line, const char* end_line)
 {
+  if (filename == nullptr || *filename == '\0')
+    return;
+	
   ifstream in(filename);
   if (!in.is_open()) return;
   
