@@ -24,11 +24,32 @@
 #include "Universal_System/depth_draw.h"
 #include "graphics_object.h"
 
-#include <math.h>
+#include <cmath.h>
 #include <floatcomp.h>
 
 namespace enigma
 {
+   ///	auxiliary function
+   static inline int graphics_to_int(double value)
+   {
+    if (!std::isfinite(value))
+        return 0;
+
+    const double min_value =
+        static_cast<double>(std::numeric_limits<int>::min());
+
+    const double max_value =
+        static_cast<double>(std::numeric_limits<int>::max());
+
+    if (value <= min_value)
+        return std::numeric_limits<int>::min();
+
+    if (value >= max_value)
+        return std::numeric_limits<int>::max();
+
+    return static_cast<int>(value);
+   }	
+	
   object_graphics::object_graphics() {
     image_single.image_index = &image_index;
     image_single.image_speed = &image_speed;
@@ -48,7 +69,15 @@ namespace enigma
   void depthv::function(const variant &oldval) {
     if (!myiter || !myiter->inst) { return; }
 
-    rval.d = floor(rval.d);
+    if (!std::isfinite(rval.d)) {
+      rval.d = std::isfinite(oldval.rval.d)
+          ? std::floor(oldval.rval.d)
+          : 0;
+      return;
+    }
+
+    rval.d = std::floor(rval.d);
+
     if (fequal(oldval.rval.d, rval.d)) return;
 
     std::map<int,std::pair<double,double> >::iterator it = id_to_currentnextdepth.find(myiter->inst->id);
@@ -60,7 +89,8 @@ namespace enigma
     }
   }
   void depthv::init(gs_scalar d,object_basic* who) {
-    myiter = drawing_depths[rval.d = floor(d)].draw_events->add_inst(who);
+    if (!std::isfinite(d)) d = 0;
+    myiter = drawing_depths[rval.d = std::floor(d)].draw_events->add_inst(who);
   }
   void depthv::remove() {
     if (!myiter)
@@ -68,7 +98,7 @@ namespace enigma
     if (!myiter->inst) {
       myiter = nullptr;
       return;
-}
+   }
     std::map<int,std::pair<double,double> >::iterator it = id_to_currentnextdepth.find(myiter->inst->id);
     if (it == id_to_currentnextdepth.end()) { // Local value is valid, use it.
       drawing_depths[rval.d].draw_events->unlink(myiter);
@@ -91,9 +121,33 @@ namespace enigma
     }
   }
 
-  int object_graphics::$sprite_width()  const { return sprite_index == -1? 0 : enigma_user::sprite_get_width(sprite_index)*image_xscale; }
-  int object_graphics::$sprite_height() const { return sprite_index == -1? 0 : enigma_user::sprite_get_height(sprite_index)*image_yscale; }
-  int object_graphics::$sprite_xoffset() const { return sprite_index == -1? 0 : enigma_user::sprite_get_xoffset(sprite_index)*image_xscale; }
-  int object_graphics::$sprite_yoffset() const { return sprite_index == -1? 0 : enigma_user::sprite_get_yoffset(sprite_index)*image_yscale; }
+int object_graphics::$sprite_width() const {
+    return sprite_index == -1 ? 0 :
+        graphics_to_int(
+            enigma_user::sprite_get_width(sprite_index) * image_xscale
+        );
+}
+
+int object_graphics::$sprite_height() const {
+    return sprite_index == -1 ? 0 :
+        graphics_to_int(
+            enigma_user::sprite_get_height(sprite_index) * image_yscale
+        );
+}
+
+int object_graphics::$sprite_xoffset() const {
+    return sprite_index == -1 ? 0 :
+        graphics_to_int(
+            enigma_user::sprite_get_xoffset(sprite_index) * image_xscale
+        );
+}
+
+int object_graphics::$sprite_yoffset() const {
+    return sprite_index == -1 ? 0 :
+        graphics_to_int(
+            enigma_user::sprite_get_yoffset(sprite_index) * image_yscale
+        );
+}
+
   int object_graphics::$image_number() const { return sprite_index == -1? 0 : enigma_user::sprite_get_number(sprite_index); }
 }
