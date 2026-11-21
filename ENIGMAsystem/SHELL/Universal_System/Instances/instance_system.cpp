@@ -398,7 +398,7 @@ namespace enigma
 
     if (!it.second)
     {
-      return new winstance_list_iterator(it.first);
+      return NULL;
     }
     
 
@@ -475,8 +475,6 @@ namespace enigma
       return;
   
     inst_iter *a = who->second;   
-    if (!a || !a->inst)
-      return;
 
     std::deque<int>::iterator id_it =
         std::find(enigma_user::instance_id.begin(),
@@ -501,9 +499,7 @@ namespace enigma
       return;
 	  
     inst_iter *a = whop->w->second;
-    if (!a || !a->inst)
-      return;
-    
+   
     std::deque<int>::iterator id_it =
         std::find(enigma_user::instance_id.begin(),
                   enigma_user::instance_id.end(),
