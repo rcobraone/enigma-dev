@@ -57,15 +57,19 @@ namespace jdi {
         declare(it->first, cs);
       }
     }
-    dec_order = from->dec_order;
-    for (orditer it = dec_order.begin(); it != dec_order.end(); ++it) {
-        definition *def = (*it)->def();
+    for (orditer it = from->dec_order.begin();
+         it != from->dec_order.end(); ++it) {
+      definition *def = (*it)->def();
       remap_iter rit = n.find(def);
       #ifdef DEBUG_MODE
-        if (rit == n.end() && !(def->flags & DEF_HYPOTHETICAL))
+        if (def && rit == n.end() && !(def->flags & DEF_HYPOTHETICAL))
           cerr << "FAILURE! Definition `" << def->name << "' in the order deque was not found in the remap set!" << endl;
       #endif
-      *it = new dec_order_generic((rit == n.end())? def : rit->second);
+      dec_order.push_back(
+        new dec_order_generic(
+          (rit == n.end()) ? def : rit->second
+        )
+      );
     }
     using_general = from->using_general;
     if (from->using_front) {
@@ -111,14 +115,19 @@ namespace jdi {
     for (vector<const_pair>::const_iterator c = constants.begin(); c != constants.end(); ++c) {
       definition_valued* dv = (definition_valued*)c->def->duplicate(n);
       decpair dp = res->declare(dv->name, dv);
+      definition_valued *member;
+      
       if (!dp.inserted) {
         cerr << "ERROR: enum member `" << c->def->name << "' in new definition is already mapped! This is a program error!" << endl;
-        delete ~dp.def;
-        dp.def = dv;
+        n.erase(c->def);
+        delete dv;
+        member = (definition_valued*)dp.def;
+      } else {
+        member = dv;
       }
+      
       res->constants.push_back(const_pair(dv, dup(c->ast)));
     }
-    n[this] = res;
     return res;
   }
   
@@ -137,10 +146,17 @@ namespace jdi {
   
   definition *definition_function::duplicate(remap_set &n) const {
     definition_function *res = new definition_function(name, parent, flags);
+    n[this] = res;
+    
     res->overloads = overloads;
     for (overload_iter it = res->overloads.begin(); it != res->overloads.end(); ++it)
+    {
+      if (!it->second)
+        continue;
+
       it->second = (definition_overload*)it->second->duplicate(n);
-    n[this] = res;
+    }
+
     return res;
   }
   
@@ -156,31 +172,63 @@ namespace jdi {
     definition_template* res = new definition_template(name, parent, flags);
     n[this] = res;
     
-    res->def = def->duplicate(n);
-    res->specializations = specializations;
-    res->instantiations = instantiations;
+    res->def = def ? def->duplicate(n) : NULL;
     res->params.reserve(params.size());
     
     for (pciterator it = params.begin(); it != params.end(); ++it)
       res->params.push_back((definition_tempparam*)(*it)->duplicate(n));
     
-    for (speciter it = res->specializations.begin(); it != res->specializations.end(); ++it)
-      (*it)->spec_temp = (definition_template*)(*it)->spec_temp->duplicate(n);
-    
-    for (institer it = res->instantiations.begin(); it != res->instantiations.end(); ++it) {
-      definition *nd = it->second->def->duplicate(n);
-      n[it->second->def] = nd;
-      it->second = new instantiation();
-      it->second->def = nd;
+    res->specializations.reserve(specializations.size());
+    for (speciter it = specializations.begin(); it != specializations.end(); ++it) {
+      if (!*it)
+        continue;
+
+      definition_template *new_spec_temp = NULL;
+      if ((*it)->spec_temp)
+        new_spec_temp = (definition_template*)(*it)->new_spec_temp->duplicate(n);
+
+      res->specializations.push_back(
+        new specialization(**it, new_spec_temp)
+      );
     }
-    
+    for (institer it = instantiations.begin(); it != instantiations.end(); ++it) {
+      if (!it->second)
+        continue;
+
+      instantiation *src = it->second;
+      instantiation *dst = new instantiation();
+
+      if (src->def) {
+        dst->def = src->def->duplicate(n);
+        n[src->def] = dst->def;
+      }
+
+      dst->parameter_defs.reserve(src->parameter_defs.size());
+      for (vector<definition*>::const_iterator p = src->parameter_defs.begin();
+           p != src->parameter_defs.end(); ++p) {
+        if (*p) {
+          definition *np = (*p)->duplicate(n);
+          n[*p] = np;
+          dst->parameter_defs.push_back(np);
+        } else {
+          dst->parameter_defs.push_back(NULL);
+        }
+      }
+
+      res->instantiations.insert(
+        pair<arg_key, instantiation*>(it->first, dst)
+      );
+    }
+    // Instantiations are a cache and own their definitions.
+    // They are intentionally not copied.
+  
     return res;
   }
   
   definition* definition_tempparam::duplicate(remap_set &n) const {
     definition_tempparam* res = new definition_tempparam(name, parent, flags);
     n[this] = res;
-    
+    res->must_be_class = must_be_class;
     res->integer_type.copy(integer_type);
     res->default_assignment = dup(default_assignment);
     res->definition_class::copy(this, n);
@@ -203,15 +251,23 @@ namespace jdi {
     return res;
   }
   
-  definition* definition_atomic::duplicate(remap_set &) {
-    return this;
+  definition* definition_atomic::duplicate(remap_set &n) const {
+    definition_atomic* res =
+      new definition_atomic(name, parent, flags, sz);
+    n[this] = res;
+    return res;
   }
   
   definition* definition_hypothetical::duplicate(remap_set &n) const {
-    definition_hypothetical* res = new definition_hypothetical(name, parent, flags, def->duplicate());
+    definition_hypothetical* res =
+      new definition_hypothetical(name, parent, flags, def ? def->duplicate() : NULL);
     n[this] = res; return res;
   }
   
+   definition* definition_atomic::duplicate(remap_set &) const {
+     return this;
+
+   } 
   
   //========================================================================================================
   //======: Re-map Functions :==============================================================================
@@ -235,24 +291,29 @@ namespace jdi {
   void definition_scope::remap(remap_set &n, const error_context &errc) {
     definition::remap(n, errc);
     // cout << "Scope `" << name << "' has " << dec_order.size() << " ordered members" << endl;
-    for (orditer it = dec_order.begin(); it != dec_order.end(); ++it) {
+    for (orditer it = dec_order.begin(); it != dec_order.end(); ) {
       definition *def = (*it)->def();
       remap_set::const_iterator ex = n.find(def);
       if (ex != n.end())
-        dec_order.erase(it);
-      else
+        delete *it;      
+        it = dec_order.erase(it);
+        *it = new dec_order_generic(ex->second);
+      else {
         def->remap(n, errc);
+        ++it;
+      }        
     }
     for (defiter it = members.begin(); it != members.end(); ++it) {
       remap_set::const_iterator ex = n.find(it->second);
       if (ex != n.end()) {
-        delete it->second;
+        if (!(it->second->flags & (DEF_ENUM | DEF_CLASS | DEF_UNION)))
+          delete it->second;
         it->second = ex->second;
       }
     }
     for (using_node *un = using_front; un; un = un->next) {
       remap_set::const_iterator ex = n.find(un->use);
-      if (ex == n.end())
+      if (ex != n.end())
         un->use = (definition_scope*)ex->second;
     }
     for (defiter it = using_general.begin(); it != using_general.end(); ++it) {
@@ -260,6 +321,11 @@ namespace jdi {
       if (ex != n.end())
         it->second = ex->second;
     }
+    for (defiter it = c_structs.begin(); it != c_structs.end(); ++it) {
+      remap_set::const_iterator ex = n.find(it->second);
+      if (ex != n.end())
+        it->second = ex->second;
+    }   
   }
   
   void definition_class::remap(remap_set &n, const error_context &errc) {
@@ -269,8 +335,12 @@ namespace jdi {
       remap_set::const_iterator ex = n.find(an.def);
       if (ex != n.end()) {
         definition *ancc = ex->second;
-        for (;;)
-          if ((ancc->flags & (DEF_TYPED | DEF_TYPENAME)) == (DEF_TYPED | DEF_TYPENAME)) {
+        for (;;) {
+          if (!ancc)
+            break;
+
+          if ((ancc->flags & (DEF_TYPED | DEF_TYPENAME)) ==
+              (DEF_TYPED | DEF_TYPENAME)) {
             full_type r = ancc; r.reduce();
             ancc = r.def;
           }
@@ -286,7 +356,7 @@ namespace jdi {
             }
           }
           else break;
-        
+        }
         if (!ancc)
           errc.report_error("ERROR! Replacing ancestor `" + an.def->name + "' with bad typedef!");
         else if (not(ancc->flags & DEF_CLASS))
@@ -331,7 +401,6 @@ namespace jdi {
         }
       }
       else {
-        delete it->def;
         it->def = d;
       }
     }
@@ -357,10 +426,28 @@ namespace jdi {
     for (vector<definition_tempparam*>::iterator it = params.begin(); it != params.end(); ++it)
       if ((*it)->default_assignment)
         (*it)->default_assignment->remap(n);
-    for (institer it = instantiations.begin(); it != instantiations.end(); ++it)
-      it->second->def->remap(n, errc);
-    for (speciter it = specializations.begin(); it != specializations.end(); ++it)
-      (*it)->spec_temp->remap(n, errc);
+
+    for (institer it = instantiations.begin();
+         it != instantiations.end(); ++it)
+      if (it->second) {
+        if (it->second->def)
+          it->second->def->remap(n, errc);
+
+        for (vector<definition*>::iterator p = it->second->parameter_defs.begin();
+             p != it->second->parameter_defs.end(); ++p) {
+          remap_citer ex = n.find(*p);
+          if (ex != n.end())
+            *p = ex->second;
+        }
+      }
+
+    for (speciter it = specializations.begin();
+         it != specializations.end(); ++it)
+       {
+	(*it)->filter.remap(n, errc);     
+      if (*it && (*it)->spec_temp)
+        (*it)->spec_temp->remap(n, errc);
+    }
     if (def)
       def->remap(n, errc);
   }
@@ -380,7 +467,7 @@ namespace jdi {
       if ((ex = n.find(type)) != n.end())
         type = ex->second;
     }*/
-    if (!(type->flags & DEF_DEPENDENT))
+    if (type && !(type->flags & DEF_DEPENDENT))
       flags &= ~DEF_DEPENDENT;
     definition::remap(n, errc);
   }
@@ -392,6 +479,9 @@ namespace jdi {
   void definition_atomic::remap(remap_set &n, const error_context &errc) { definition::remap(n, errc); }
   
   void definition_hypothetical::remap(remap_set &n, const error_context &errc) {
+    if (!def)
+      return;
+
     def->remap(n);
     full_type ft = def->coerce(errc);
     
@@ -463,8 +553,9 @@ namespace jdi {
       res->params.push_back(dup(*p));
     return res;
   }
-  AST_Node *AST_Node_TempInst   ::duplicate() const {
-    AST_Node_TempInst *res = new AST_Node_TempInst(temp->duplicate(), content);
+  AST_Node *AST_Node_TempInst::duplicate() const {
+    AST_Node_TempInst *res =
+      new AST_Node_TempInst(dup(temp), content);
     res->params.reserve(params.size());
     for (vector<AST_Node*>::const_iterator p = params.begin(); p != params.end(); ++p)
       res->params.push_back(dup(*p));
@@ -508,12 +599,12 @@ namespace jdi {
   void AST_Node_Parameters ::remap(const remap_set& n) {
     nremap(func, n);
     for (vector<AST_Node*>::iterator p = params.begin(); p != params.end(); ++p)
-      (*p)->remap(n);
+      nremap(*p, n);
   }
   void AST_Node_TempInst   ::remap(const remap_set& n) {
-    temp->remap(n);
+    nremap(temp, n);
     for (vector<AST_Node*>::iterator p = params.begin(); p != params.end(); ++p)
-      (*p)->remap(n);
+      nremap(*p, n);
   }
   void AST_Node_TempKeyInst::remap(const remap_set& n) {
     temp = filter(temp, n);
@@ -521,7 +612,7 @@ namespace jdi {
   }
   void AST_Node_Array      ::remap(const remap_set& n) {
     for (vector<AST_Node*>::iterator e = elements.begin(); e != elements.end(); ++e)
-      (*e)->remap(n);
+      nremap(*e, n);
   }
   
 }
