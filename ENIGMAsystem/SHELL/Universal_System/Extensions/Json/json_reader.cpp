@@ -119,6 +119,17 @@ bool Reader::parse( const char *beginDoc, const char *endDoc, Value &root,bool c
    bool successful = readValue();
    Token token;
    skipCommentTokens( token );
+
+    // Reject additional data after the root JSON value.
+    if ( successful &&
+         ( token.type_ != tokenEndOfStream || current_ != end_ ) )
+    {
+       successful = addError(
+          "Extra data after the end of the JSON value.",
+          token
+       );
+    }
+  
    if ( collectComments_  &&  !commentsBefore_.empty() )
       root.setComment( commentsBefore_, commentAfter );
    if ( features_.strictRoot_ )
@@ -378,10 +389,13 @@ bool Reader::readCStyleComment()
 
 {
       Char c = getNextChar();
-      if ( c == '*'  &&  *current_ == '/' )
-         break;
+        if ( c == '*' && current_ != end_ && *current_ == '/' )
+        {
+            ++current_;
+            return true;
+        };
    }
-   return getNextChar() == '/';
+   return false;
 }
 
 
@@ -412,17 +426,26 @@ void Reader::readNumber()
 
 bool Reader::readString()
 {
-   Char c = 0;
    while ( current_ != end_ )
+   {
+      const Char c = getNextChar();
 
-{
-      c = getNextChar();
+      if ( c == '"' )
+         return true;
+
+      if ( static_cast<unsigned char>(c) < 0x20 )
+         return false;
+
       if ( c == '\\' )
+      {
+         if ( current_ == end_ )
+            return false;
+
          getNextChar();
-      else if ( c == '"' )
-         break;
+      }
    }
-   return c == '"';
+
+   return false;
 }
 
 
@@ -491,7 +514,7 @@ bool Reader::readArray( Token &/*tokenStart*/ )
 {
    currentValue() = Value( arrayValue );
    skipSpaces();
-   if ( *current_ == ']' ) // empty array
+   if ( current_ != end_ && *current_ == ']' ) // empty array
 
 {
       Token endArray;
@@ -552,8 +575,13 @@ bool Reader::decodeNumber( Token &token )
    bool isNegative = *current == '-';
    if ( isNegative )
       ++current;
-   Value::LargestUInt maxIntegerValue = isNegative ? Value::LargestUInt(-Value::minLargestInt)
-                                                   : Value::maxLargestUInt;
+const Value::LargestUInt minMagnitude =
+    static_cast<Value::LargestUInt>(
+        -(Value::minLargestInt + 1)
+    ) + Value::LargestUInt(1);
+
+Value::LargestUInt maxIntegerValue =
+    isNegative ? minMagnitude : Value::maxLargestUInt;
    Value::LargestUInt threshold = maxIntegerValue / 10;
    Value::UInt lastDigitThreshold = Value::UInt( maxIntegerValue % 10 );
    assert( lastDigitThreshold >=0  &&  lastDigitThreshold <= 9 );
@@ -579,8 +607,13 @@ bool Reader::decodeNumber( Token &token )
       }
       value = value * 10 + digit;
    }
-   if ( isNegative )
-      currentValue() = -Value::LargestInt( value );
+if ( isNegative )
+{
+    if ( value == minMagnitude )
+        currentValue() = Value::minLargestInt;
+    else
+        currentValue() = -static_cast<Value::LargestInt>( value );
+}
    else if ( value <= Value::LargestUInt(Value::maxInt) )
       currentValue() = Value::LargestInt( value );
    else
@@ -594,6 +627,7 @@ bool Reader::decodeDouble( Token &token )
    double value = 0;
    const int bufferSize = 32;
    int count;
+   int consumed = -1;
    int length = int(token.end_ - token.start_);
    if ( length <= bufferSize )
 
@@ -601,17 +635,21 @@ bool Reader::decodeDouble( Token &token )
       Char buffer[bufferSize+1];
       memcpy( buffer, token.start_, length );
       buffer[length] = 0;
-      count = sscanf( buffer, "%lf", &value );
+      count = sscanf( buffer, "%lf%n", &value, &consumed );
    }
    else
 
 {
       std::string buffer( token.start_, token.end_ );
-      count = sscanf( buffer.c_str(), "%lf", &value );
+      count = sscanf( buffer.c_str(), "%lf%n", &value, &consumed );
    }
 
-   if ( count != 1 )
-      return addError( "'" + std::string( token.start_, token.end_ ) + "' is not a number.", token );
+   if ( count != 1 || consumed != length || !std::isfinite(value) )
+      return addError(
+         "'" + std::string( token.start_, token.end_ ) +
+         "' is not a valid finite number.",
+         token
+      );
    currentValue() = value;
    return true;
 }
@@ -668,11 +706,70 @@ bool Reader::decodeString( Token &token, std::string &decoded )
             return addError( "Bad escape sequence in string", token, current );
          }
       }
-      else
+       else
+       {
+          const unsigned char lead = static_cast<unsigned char>(c);
 
-{
-         decoded += c;
-      }
+          if (lead < 0x20)
+             return addError("Unescaped control character in JSON string.", token, current);
+
+          if (lead <= 0x7F)
+          {
+             decoded += c;
+             continue;
+          }
+
+          const Location sequenceStart = current - 1;
+          unsigned int codePoint = 0;
+          unsigned int minimumCodePoint = 0;
+          unsigned int continuationCount = 0;
+
+          if (lead >= 0xC2 && lead <= 0xDF)
+          {
+             codePoint = lead & 0x1F;
+             minimumCodePoint = 0x80;
+             continuationCount = 1;
+          }
+          else if (lead >= 0xE0 && lead <= 0xEF)
+          {
+             codePoint = lead & 0x0F;
+             minimumCodePoint = 0x800;
+             continuationCount = 2;
+          }
+          else if (lead >= 0xF0 && lead <= 0xF4)
+          {
+             codePoint = lead & 0x07;
+             minimumCodePoint = 0x10000;
+             continuationCount = 3;
+          }
+          else
+             return addError("Invalid UTF-8 leading byte.", token, sequenceStart);
+
+          for (unsigned int i = 0; i < continuationCount; ++i)
+          {
+             if (current == end)
+                return addError("Incomplete UTF-8 sequence.", token, current);
+
+             const unsigned char continuation =
+                 static_cast<unsigned char>(*current);
+
+             if ((continuation & 0xC0) != 0x80)
+                return addError("Invalid UTF-8 continuation byte.", token, current);
+
+             codePoint = (codePoint << 6) | (continuation & 0x3F);
+             ++current;
+          }
+
+          if (codePoint < minimumCodePoint ||
+              (codePoint >= 0xD800 && codePoint <= 0xDFFF) ||
+              codePoint > 0x10FFFF)
+             return addError("Invalid UTF-8 code point.", token, sequenceStart);
+
+          decoded.append(
+              sequenceStart,
+              static_cast<std::size_t>(current - sequenceStart)
+          );
+       }
    }
    return true;
 }
@@ -682,27 +779,30 @@ bool Reader::decodeUnicodeCodePoint( Token &token, Location &current,    Locatio
 
    if ( !decodeUnicodeEscapeSequence( token, current, end, unicode ) )
       return false;
+   if (unicode >= 0xDC00 && unicode <= 0xDFFF)
+      return addError("Unexpected low surrogate in Unicode escape sequence.", token, current);
+
    if (unicode >= 0xD800 && unicode <= 0xDBFF)
-
-{
-      // surrogate pairs
+   {
       if (end - current < 6)
-         return addError( "additional six characters expected to parse unicode surrogate pair.", token, current );
-      unsigned int surrogatePair;
-      if (*(current++) == '\\' && *(current++)== 'u')
+         return addError("Incomplete Unicode surrogate pair.", token, current);
 
-{
-         if (decodeUnicodeEscapeSequence( token, current, end, surrogatePair ))
+      if (*current++ != '\\' || *current++ != 'u')
+         return addError("Expected a low surrogate Unicode escape sequence.", token, current);
 
-{
-            unicode = 0x10000 + ((unicode & 0x3FF) << 10) + (surrogatePair & 0x3FF);
-         }
-         else
-            return false;
-      }
-      else
-         return addError( "expecting another \\u token to begin the second half of a unicode surrogate pair", token, current );
+      unsigned int surrogatePair = 0;
+
+      if (!decodeUnicodeEscapeSequence(token, current, end, surrogatePair))
+         return false;
+
+      if (surrogatePair < 0xDC00 || surrogatePair > 0xDFFF)
+         return addError("Invalid low surrogate in Unicode escape sequence.", token, current);
+
+      unicode = 0x10000
+          + ((unicode - 0xD800) << 10)
+          + (surrogatePair - 0xDC00);
    }
+
    return true;
 }
 
@@ -790,7 +890,7 @@ void Reader::getLocationLineAndColumn( Location location,  int &line, int &colum
       if ( c == '\r' )
 
 {
-         if ( *current == '\n' )
+         if ( current < end_ && *current == '\n' )
             ++current;
          lastLineStart = current;
          ++line;
