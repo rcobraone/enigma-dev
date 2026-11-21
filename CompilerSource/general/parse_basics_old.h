@@ -27,7 +27,9 @@
 #ifndef PARSE_BASICS_OLD_H
 #define PARSE_BASICS_OLD_H
 
-typedef size_t pt;
+#include <cstddef>
+
+using pt = std::size_t;
 
 inline bool is_letter(char x)
 {
