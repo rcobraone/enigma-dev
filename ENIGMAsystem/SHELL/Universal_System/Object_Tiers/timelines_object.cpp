@@ -95,6 +95,10 @@ namespace enigma
 
   void object_timelines::loop_curr_timeline() 
   {
+    if (!std::isfinite(timeline_speed) ||
+        !std::isfinite(timeline_position))
+      return;
+	  
     //Determine if we're past the last event. Note that no residual movement carries over; this effectively "resets to 0".
     if (timeline_index < 0 ||
         static_cast<size_t>(timeline_index) >= timeline_moments_maps.size()) { return; }
