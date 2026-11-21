@@ -21,6 +21,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <map>
+#include <limits>
 
 using namespace std;
 #define flushl '\n' << flush
@@ -65,20 +66,27 @@ extern jdi::definition *enigma_type__var, *enigma_type__variant, *enigma_type__v
 
 inline string fc(const char* fn)
 {
-    FILE *pt = fopen(fn,"rb");
-    if (pt==NULL) return "";
-    else {
-      fseek(pt,0,SEEK_END);
-      size_t sz = ftell(pt);
-      fseek(pt,0,SEEK_SET);
+    FILE *pt = fopen(fn, "rb");
+    if (pt == NULL) return "";
 
-      char a[sz+1];
-      sz = fread(a,1,sz,pt);
+    if (fseek(pt, 0, SEEK_END) != 0) {
       fclose(pt);
-
-      a[sz] = 0;
-      return a;
+      return "";
     }
+
+    long file_size = ftell(pt);
+    if (file_size < 0 || fseek(pt, 0, SEEK_SET) != 0) {
+      fclose(pt);
+      return "";
+    }
+
+    string result(static_cast<size_t>(file_size), '\0');
+    const size_t read_size =
+      result.empty() ? 0 : fread(&result[0], 1, result.size(), pt);
+
+    fclose(pt);
+    result.resize(read_size);
+    return result;
 }
 
 inline void povers(string n)
@@ -214,6 +222,12 @@ void do_cli(context &ct) {
         if (false) { case 'f': justflags = true; }
         cout << "Enter the item to define:" << endl << ">> " << flush;
         char buf[4096]; cin.getline(buf, 4096);
+        if (cin.fail()) {
+          cin.clear();
+          cin.ignore(numeric_limits<streamsize>::max(), '\n');
+          cout << "Input line is too long." << endl;
+          break;
+        }       
         size_t start, e = 0;
         while (is_useless(buf[e]) or buf[e] == ':') ++e;
         definition* def = ct.get_global();
