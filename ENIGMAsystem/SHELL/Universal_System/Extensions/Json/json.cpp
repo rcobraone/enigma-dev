@@ -24,8 +24,12 @@
 #include "Widget_Systems/widgets_mandatory.h"
 #include "json.h"
 #include <cstdio>
+#include <cmath>
 #include <iostream>
 #include <sstream>
+#include <cstddef>
+#include <vector>
+#include <utility>
 #include "../DataStructures/include.h"
 #include "libjson.h"
 
@@ -33,18 +37,110 @@ using std::string;
 
 namespace enigma_user
 {
+///auxiliary function
+       static void DestroyJSONChildren(
+           const std::vector<std::pair<int, bool>>& children)
+       {
+               for (const auto& child : children)
+               {
+                       if (child.second)
+                               ds_list_destroy(child.first);
+                       else
+                               ds_map_destroy(child.first);
+               }
+       }
 
 	constexpr unsigned JSON_MAX_NESTING_DEPTH = 256;
+	
+       constexpr std::size_t JSON_MAX_INPUT_SIZE = 16 * 1024 * 1024;
+       
+       static bool json_check_nesting_depth(const std::string& data)
+       {
+               unsigned depth = 0;
+               bool in_string = false;
+               bool escaped = false;
 
-       int RecursiveDSList(Json::Value root, unsigned depth);
+               for (const char c : data)
+               {
+                       if (in_string)
+                       {
+                               if (escaped)
+                                       escaped = false;
+                               else if (c == '\\')
+                                       escaped = true;
+                               else if (c == '"')
+                                       in_string = false;
 
-       int RecursiveDSMap(Json::Value root, unsigned depth)
+                               continue;
+                       }
+
+                       if (c == '"')
+                               in_string = true;
+                       else if (c == '{' || c == '[')
+                       {
+                               if (++depth > JSON_MAX_NESTING_DEPTH)
+                                       return false;
+                       }
+                       else if (c == '}' || c == ']')
+                       {
+                               if (depth > 0)
+                                       --depth;
+                       }
+               }
+
+               return true;
+       }
+
+       static bool IsJSONInputSafe(const std::string& data)
+       {
+               if (data.size() > JSON_MAX_INPUT_SIZE)
+                       return false;
+
+               unsigned depth = 0;
+               bool in_string = false;
+               bool escaped = false;
+
+               for (const char c : data)
+               {
+                       if (in_string)
+                       {
+                               if (escaped)
+                                       escaped = false;
+                               else if (c == '\\')
+                                       escaped = true;
+                               else if (c == '"')
+                                       in_string = false;
+
+                               continue;
+                       }
+
+                       if (c == '"')
+                               in_string = true;
+                       else if (c == '{' || c == '[')
+                       {
+                               if (++depth > JSON_MAX_NESTING_DEPTH)
+                                       return false;
+                       }
+                       else if (c == '}' || c == ']')
+                       {
+                               if (depth > 0)
+                                       --depth;
+                       }
+               }
+
+               return true;
+       }	
+
+       int RecursiveDSList(const Json::Value& root, unsigned depth);
+
+       int RecursiveDSMap(const Json::Value& root, unsigned depth)
 	{
-        if (depth > JSON_MAX_NESTING_DEPTH)
+        if (depth >= JSON_MAX_NESTING_DEPTH)
         {
         return -1;        
         }
         int jsonObject=ds_map_create();
+        std::vector<std::pair<int, bool>> children;
 
 		Json::Value::Members m=root.getMemberNames();
 		for (Json::Value::Members::iterator it = m.begin() ; it != m.end(); ++it)
@@ -86,9 +182,11 @@ namespace enigma_user
 				int dsmap=RecursiveDSList(root[*it], depth + 1);
 				if (dsmap==-1)
 				{
+					DestroyJSONChildren(children);
 					ds_map_destroy(jsonObject);
 					return -1;
 				}
+				children.emplace_back(dsmap, true);
 				ds_map_add(jsonObject,*it,dsmap);
 			}
 			else if (root[*it].isObject())
@@ -96,13 +194,16 @@ namespace enigma_user
 				int dsmap=RecursiveDSMap(root[*it], depth + 1);
 				if (dsmap==-1)
 				{
+					DestroyJSONChildren(children);
 					ds_map_destroy(jsonObject);
 					return -1;
 				}
+				children.emplace_back(dsmap, false);
 				ds_map_add(jsonObject,*it,dsmap);
 			}
 			else
 			{
+				DestroyJSONChildren(children);
 				ds_map_destroy(jsonObject);
 				return -1;
 			}
@@ -110,16 +211,17 @@ namespace enigma_user
 		return jsonObject;
 	}
 	
-	int RecursiveDSList(Json::Value root, unsigned depth)
+	int RecursiveDSList(const Json::Value& root, unsigned depth)
 	{
 
-        if (depth > JSON_MAX_NESTING_DEPTH)
+        if (depth >= JSON_MAX_NESTING_DEPTH)
         {
         return -1;
         }
         int jsonArray=ds_list_create();
+        std::vector<std::pair<int, bool>> children;
         
-		for (int i=0; i<root.size(); ++i)
+		for (Json::ArrayIndex i = 0; i < root.size(); ++i)
 		{
 			if (root[i].isNull())
 			{
@@ -158,9 +260,11 @@ namespace enigma_user
 				int dsmap=RecursiveDSList(root[i], depth + 1);
 				if (dsmap==-1)
 				{
+					DestroyJSONChildren(children);
 					ds_list_destroy(jsonArray);
 					return -1;
 				}
+				children.emplace_back(dsmap, true);
 				ds_list_add(jsonArray,(enigma::varargs(), dsmap));
 			}
 			else if (root[i].isObject())
@@ -168,13 +272,16 @@ namespace enigma_user
 				int dsmap=RecursiveDSMap(root[i], depth + 1);
 				if (dsmap==-1)
 				{
+					DestroyJSONChildren(children);
 					ds_list_destroy(jsonArray);
 					return -1;
 				}
+				children.emplace_back(dsmap, false);
 				ds_list_add(jsonArray,(enigma::varargs(), dsmap));
 			}
 			else
 			{
+				DestroyJSONChildren(children);
 				ds_list_destroy(jsonArray);
 				return -1;
 			}
@@ -184,9 +291,27 @@ namespace enigma_user
 	
 	variant json_decode(string data)
 	{
+		
+               if (!IsJSONInputSafe(data))
+               {
+                       DEBUG_MESSAGE(
+                               "JSON input exceeds the allowed size or nesting depth.",
+                               MESSAGE_TYPE::M_ERROR
+                       );
+                       return -1;
+               }
+               
+               if (!json_check_nesting_depth(data))
+               {
+                       DEBUG_MESSAGE(
+                               "JSON nesting depth exceeds the maximum allowed depth.",
+                               MESSAGE_TYPE::M_ERROR                      );
+                       return -1;
+               }
+
 		Json::Value root;
 		Json::Reader reader;
-		bool parsingSuccessful = reader.parse(data, root);
+		const bool parsingSuccessful = reader.parse(data, root);
 		if ( !parsingSuccessful )
 		{
 			DEBUG_MESSAGE("Failed to parse JSON" + reader.getFormattedErrorMessages(), MESSAGE_TYPE::M_ERROR);
@@ -203,7 +328,7 @@ namespace enigma_user
 		}
 		else
 		{
-			DEBUG_MESSAGE("Invalid JSON. The root is not as array of objects or an object.", MESSAGE_TYPE::M_ERROR);
+			DEBUG_MESSAGE("Invalid JSON. The root must be a JSON object or array.", MESSAGE_TYPE::M_ERROR);
 			return -1;
 		}
 	}
@@ -221,37 +346,47 @@ static std::string json_encode_string(const std::string &value)
 	/*
 		Check https://github.com/enigma-dev/enigma-dev/pull/2358.
 	*/
-	string json_encode(variant ds_map) {
-		if (!enigma_user::ds_map_exists(ds_map)) {
-				DEBUG_MESSAGE("DS map does not exist", MESSAGE_TYPE::M_ERROR);
-				return string("{}");
-		}
+       string json_encode(variant ds_map) {
+               if (!enigma_user::ds_map_exists(ds_map)) {
+                       DEBUG_MESSAGE("DS map does not exist", MESSAGE_TYPE::M_ERROR);
+                       return string("{}");
+               }
 
-		std::stringstream encoding_accumulator;
+               Json::Value root(Json::objectValue);
+               const int map_size = enigma_user::ds_map_size(ds_map);
+               variant key{enigma_user::ds_map_find_first(ds_map)};
 
-		encoding_accumulator << '{';
-	    const int map_size = enigma_user::ds_map_size(ds_map);
+               for (int i = 0; i < map_size; ++i) {
+                       const string map_key = enigma_user::toString(key);
+                       variant value{enigma_user::ds_map_find_value(ds_map, key)};
 
-		variant key{enigma_user::ds_map_find_first(ds_map)};
+                       if (value.type == enigma_user::ty_string) {
+                               root[map_key] = Json::Value(enigma_user::toString(value));
+                       }
+                       else if (value.type == enigma_user::ty_real) {
+                               const double number = static_cast<double>(value);
 
-		for (int i = 0; i < map_size; ++i) {
-			encoding_accumulator << json_encode_string(string(key)) << ':';
+                               if (!std::isfinite(number)) {
+                                       DEBUG_MESSAGE("Cannot encode a non-finite JSON number.", MESSAGE_TYPE::M_ERROR);
+                                       return string("{}");
+                               }
 
-			variant value {enigma_user::ds_map_find_value(ds_map, key)};
+                               root[map_key] = Json::Value(number);
+                       }
+                       else {
+                               DEBUG_MESSAGE("Cannot encode an unsupported variant type as JSON.", MESSAGE_TYPE::M_ERROR);
+                               return string("{}");
+                       }
 
-			if (enigma_user::is_string(value))
-				encoding_accumulator << json_encode_string(enigma_user::toString(value));
-			else 
-				encoding_accumulator << enigma_user::toString(value);
+                       key = enigma_user::ds_map_find_next(ds_map, key);
+               }
 
-			key = enigma_user::ds_map_find_next(ds_map, key);
-			
-			// Add comma if not last element
-			if (i != map_size - 1) encoding_accumulator << ',';
-		}
+               Json::FastWriter writer;
+               string result = writer.write(root);
 
-		encoding_accumulator << '}';
+               if (!result.empty() && result.back() == '\n')
+                       result.pop_back();
 
-		return encoding_accumulator.str();
-	}
+               return result;
+       }
 }
