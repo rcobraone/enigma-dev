@@ -55,6 +55,8 @@ string REFERENCE_POSTFIX(string ref) {
     }
     else if (ref[pos] == ']')
     {
+      if (lvl == 0)
+        continue;		
       if (--lvl == 0)
         ref.replace(spos,pos-spos+1,"*");
     }
@@ -69,7 +71,9 @@ struct usedtype { int uc; dectrip original; usedtype(): uc(0) {} }; // uc is the
 int lang_CPP::compile_writeObjAccess(const ParsedObjectVec &parsed_objects, const DotLocalMap &dot_accessed_locals, const ParsedScope *global, bool treatUninitAs0)
 {
   ofstream wto;
-  wto.open((codegen_directory/"Preprocessor_Environment_Editable/IDE_EDIT_objectaccess.h").u8string().c_str(),ios_base::out);
+  wto.open(codegen_directory/"Preprocessor_Environment_Editable/IDE_EDIT_objectaccess.h", ios_base::out);
+  if (!wto)
+    return E_ERROR_BUILD;
   wto << license;
   wto << "// Depending on how many times your game accesses variables via OBJECT.varname, this file may be empty." << endl << endl;
   wto << "namespace enigma" << endl << "{" << endl;
@@ -143,5 +147,7 @@ int lang_CPP::compile_writeObjAccess(const ParsedObjectVec &parsed_objects, cons
   }
   wto << "} // namespace enigma" << endl;
   wto.close();
+  if (!wto)
+    return E_ERROR_BUILD;
   return 0;
 }
