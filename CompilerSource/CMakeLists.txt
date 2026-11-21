@@ -41,6 +41,11 @@ list(REMOVE_ITEM COMPILER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/standalone_main.c
 get_filename_component(ENIGMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}" PATH)
 
 add_library(${COMPILER_LIB} ${LIB_TYPE} ${COMPILER_SOURCES})
+set_target_properties(${COMPILER_LIB} PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
 
 target_include_directories(${COMPILER_LIB} PRIVATE "JDI/src")
 
