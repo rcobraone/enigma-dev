@@ -41,6 +41,9 @@
 #include "var4.h"
 
 #include <string>
+#include <cerrno>
+#include <cstdlib>
+#include <stdexcept>
 
 #ifdef JUST_DEFINE_IT_RUN
 #  define WITH_ARITHMETIC_TYPES(...)
@@ -60,6 +63,31 @@
 
 namespace enigma_user
 {
+	
+namespace detail {
+
+inline int64_t parse_int64(const char* text) {
+  if (text == nullptr) {
+    return 0;
+  }
+
+  errno = 0;
+  char* end = nullptr;
+  const long long value = std::strtoll(text, &end, 10);
+
+  if (errno == ERANGE) {
+    throw std::out_of_range("int64 conversion out of range");
+  }
+
+  if (end == text) {
+    return 0;
+  }
+
+  return static_cast<int64_t>(value);
+}
+
+} // namespace detail
+	
   const ma_scalar pi = M_PI;
 
   // STL functions.
@@ -95,8 +123,12 @@ namespace enigma_user
 
   template<typename T> WITH_ARITHMETIC_TYPES(T) WITH_RETURN_TYPE(int64_t)
   inline int64(T x) { return (int64_t) x; }
-  inline int64_t int64(const char *x) { return (int64_t) atol(x); }
-  inline int64_t int64(std::string x) { return (int64_t) atol(x.c_str()); }
+  inline int64_t int64(const char *x) {
+  return detail::parse_int64(x);
+  }
+  inline int64_t int64(const std::string& x) {
+  return detail::parse_int64(x.c_str());
+  }
   inline int64_t int64(const variant& x) {
     return x.type == ty_string ? int64((std::string) x) : int64((double) x);
   }
@@ -168,7 +200,10 @@ namespace enigma_user
   template<typename X1, typename Y1, typename Z1, typename X2, typename Y2, typename Z2>
   WITH_ARITHMETIC_TYPES(X1, Y1, Z1, X2, Y2, Z2) WITH_RETURN_TYPE(double)
   point_distance_3d(X1 x1, Y1 y1, Z1 z1, X2 x2, Y2 y2, Z2 z2) {
-    return ::sqrt(sqr(x1 - x2) + sqr(y1 - y2) + sqr(z1 - z2));
+  return std::hypot(
+      static_cast<double>(x1) - static_cast<double>(x2),
+      static_cast<double>(y1) - static_cast<double>(y2),
+      static_cast<double>(z1) - static_cast<double>(z2));
   }
 
   // NOTE: These are technically collision functions in Studio
