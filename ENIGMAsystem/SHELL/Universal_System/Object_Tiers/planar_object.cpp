@@ -23,7 +23,7 @@
 */
 
 #include <math.h>
-
+#include <cmath>
 #include <floatcomp.h>
 
 #include "Universal_System/var4.h"
@@ -91,7 +91,7 @@ namespace enigma
 
       if (instance->hspeed != 0) {
         instance->hspeed.rval.d -= (sign * instance->friction)
-            * cos(instance->direction.rval.d * M_PI/180);
+            * cos(instance->direction.rval.d * std::acos(-1.0)/180);
       }
       if ((hb4 > 0 && instance->hspeed.rval.d < 0)
       ||  (hb4 < 0 && instance->hspeed.rval.d > 0)) {
@@ -99,7 +99,7 @@ namespace enigma
       }
       if (instance->vspeed != 0) {
         instance->vspeed.rval.d -= (sign * instance->friction)
-            * -sin(instance->direction.rval.d * M_PI/180);
+            * -sin(instance->direction.rval.d * std::acos(-1.0)/180);
       }
       if ((vb4 > 0 && instance->vspeed.rval.d < 0)
       ||  (vb4 < 0 && instance->vspeed.rval.d > 0)) {
@@ -118,9 +118,9 @@ namespace enigma
         instance->hspeed.rval.d += (instance->gravity);
       } else {
         instance->hspeed.rval.d +=
-            (instance->gravity) * cos(instance->gravity_direction * M_PI/180);
+            (instance->gravity) * cos(instance->gravity_direction * std::acos(-1.0)/180);
         instance->vspeed.rval.d +=
-            (instance->gravity) *-sin(instance->gravity_direction * M_PI/180);
+            (instance->gravity) *-sin(instance->gravity_direction * std::acos(-1.0)/180);
       }
 
       /*
@@ -136,8 +136,8 @@ namespace enigma
       instance->speed.rval.d = instance->speed.rval.d < 0? -hypot(instance->hspeed.rval.d, instance->vspeed.rval.d) :
       hypot(instance->hspeed.rval.d, instance->vspeed.rval.d);
       if (fabs(instance->speed.rval.d) > 1e-12) {
-        instance->direction.rval.d = fmod((atan2(-instance->vspeed.rval.d, instance->hspeed.rval.d) * (180/M_PI))
-        + (instance->speed.rval.d < 0?  180 : 360), 360);
+        instance->direction.rval.d = fmod((atan2(-instance->vspeed.rval.d, instance->hspeed.rval.d) * (180/std::acos(-1.0)))
+      (instance->speed.rval.d < 0?  180 : 360), 360);
       }
     }
     instance->x += instance->hspeed.rval.d;
