@@ -39,7 +39,8 @@ void macro_push_info::release(string &c, pt &p) {
   c = code; p = pos;
 }
 
-bool macro_recurses(string name, macro_stack_t &mymacrostack, unsigned mymacroind) {
+bool macro_recurses(const string& name, macro_stack_t &mymacrostack,
+                    unsigned mymacroind) {
   for (unsigned int iii = 0; iii < mymacroind; iii++)
   if (mymacrostack[iii].name == name)
     return 1;
@@ -47,11 +48,34 @@ bool macro_recurses(string name, macro_stack_t &mymacrostack, unsigned mymacroin
 }
 
 pt skip_comments(const string& code, pt cwp) {
-  while (is_useless(code[cwp]) or (code[cwp]=='/' and (code[cwp+1]=='/' or code[cwp+1]=='*')))
+while (cwp < code.length() &&
+       (is_useless(code[cwp]) ||
+        (code[cwp]=='/' && cwp + 1 < code.length() &&
+         (code[cwp+1]=='/' || code[cwp+1]=='*'))))
   {
-    if (code[cwp++] == '*') {
-      if (code[cwp] == '/') while (cwp < code.length() and  code[cwp] != '\r' and code[cwp]   != '\n') cwp++;
-      else      { cwp += 2; while (cwp < code.length() and (code[cwp] != '/'  or  code[cwp-1] != '*')) cwp++; }
+    if (is_useless(code[cwp]))
+    {
+      ++cwp;
+      continue;
+    }
+
+    if (code[cwp] == '/' && code[cwp + 1] == '/')
+    {
+      cwp += 2;
+      while (cwp < code.length() &&
+             code[cwp] != '\r' &&
+             code[cwp] != '\n')
+        ++cwp;
+    }
+    else
+    {
+      cwp += 2;
+      while (cwp < code.length() &&
+             (code[cwp] != '/' || code[cwp - 1] != '*'))
+        ++cwp;
+
+      if (cwp < code.length())
+        ++cwp;
     }
   }
   return cwp;
