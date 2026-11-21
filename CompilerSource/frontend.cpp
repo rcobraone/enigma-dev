@@ -69,50 +69,86 @@ using namespace dll_ext_iteration;
 DLLEXPORT const char* next_available_resource();
 /// Returns the name of the first resource on the list, or "" otherwise.
 DLLEXPORT const char* first_available_resource() {
+  if (main_context == nullptr)
+    return nullptr;
+	
   searching_in = (jdi::definition_scope*) main_context->get_global()->look_up("enigma_user");
+  if (searching_in == nullptr)
+    return nullptr;
+  
+  if (searching_in == nullptr) {
+    current_resource = nullptr;
+    return "";
+  }
+ 
   rit = searching_in->members.begin();
   uit = searching_in->using_general.begin();
   return next_available_resource();
 }
 /// Returns whether the resource can be called as a function
 DLLEXPORT bool resource_isFunction() {
+
+  if (current_resource == nullptr)
+    return false;	
   return current_language->definition_is_function(current_resource);
 }
 /// Returns the minimum number of arguments to the function
 DLLEXPORT int resource_argCountMin() {
+  if (current_resource == nullptr)
+    return 0;	
+	
   unsigned min, max;
   current_language->definition_parameter_bounds(current_resource, min, max);
   return min;
 }
 /// Returns the maximum number of arguments to the function
 DLLEXPORT int resource_argCountMax() {
+  if (current_resource == nullptr)
+    return 0;	
+	
   unsigned min, max;
   current_language->definition_parameter_bounds(current_resource, min, max);
   return max;
 }
 /// Returns the number of times the function was declared in the parsed sources
 DLLEXPORT int resource_overloadCount() {
+  if (current_resource == nullptr)
+    return 0;
+	
   return current_language->definition_overload_count(current_resource);
 }
 /// Returns a simple string of parameters and defaults that would serve as the prototype of this function
 /// The returned pointer to the string is INVALIDATED upon the next call to definitionsModified().
 DLLEXPORT const char* resource_parameters(int /*i*/)  {
   static string res;
+
+  if (current_resource == nullptr)
+    return "";
+
   res = current_resource->toString();
   return res.c_str();
 }
 /// Returns whether the resource can be used as a typename.
 DLLEXPORT int resource_isTypeName() {
+  if (current_resource == nullptr)
+    return false;	
+	
   return bool(current_resource->flags & jdi::DEF_TYPENAME);
 }
 /// Returns whether the resource is nothing but a global variable.
 DLLEXPORT int resource_isGlobal() {
+  if (current_resource == nullptr)
+    return false;	
+	
   return (current_resource->flags & (jdi::DEF_TYPED | jdi::DEF_TYPENAME | jdi::DEF_SCOPE | jdi::DEF_TEMPLATE | jdi::DEF_FUNCTION | jdi::DEF_PRIVATE)) == jdi::DEF_TYPED
      and !resource_isFunction();
 }
 
 /// Returns the name of the next resource on the list, or "" otherwise.
 DLLEXPORT const char* next_available_resource() {
+  if (searching_in == nullptr)
+    return nullptr;
+	
   if (rit == searching_in->members.end()) {
     if (uit == searching_in->using_general.end()) {
       return NULL;
@@ -129,5 +165,8 @@ DLLEXPORT const char* next_available_resource() {
 }
 /// Returns whether we're really done iterating the list
 DLLEXPORT bool resources_atEnd() {
+  if (searching_in == nullptr)
+    return true;
+	
   return (rit == searching_in->members.end() && uit == searching_in->using_general.end());
 }
