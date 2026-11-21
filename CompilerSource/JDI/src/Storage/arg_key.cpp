@@ -1,6 +1,6 @@
 #include <cstdio>
 #include <iostream>
-
+#include <cstddef>
 #include "arg_key.h"
 #include "definition.h"
 #include <System/builtins.h>
@@ -8,6 +8,16 @@
 using namespace std;
 
 namespace jdi {
+///adds an auxiliary function	
+  static void destroy_node_storage(arg_key::node &n) {
+    if (n.type == arg_key::AKT_FULLTYPE)
+      n.ft().~full_type();
+    else if (n.type == arg_key::AKT_VALUE)
+      n.av().~aug_value();
+
+    n.type = arg_key::AKT_NONE;
+  }
+	
   static definition n_abstract("<unspecified>", NULL, 0);
   definition *arg_key::abstract = &n_abstract;
   
@@ -26,10 +36,16 @@ namespace jdi {
   }
   
   void arg_key::put_node(size_t argnum, const node &n) {
-    if (n.type == AKT_FULLTYPE)
-      put_type(argnum, n.ft());
-    else
-      put_value(argnum, n.val());
+    destroy_node_storage(values[argnum]);
+
+    if (n.type == AKT_FULLTYPE) {
+      new (&values[argnum].data) full_type(n.ft());
+      values[argnum].type = AKT_FULLTYPE;
+    }
+    else if (n.type == AKT_VALUE) {
+      new (&values[argnum].data) aug_value(n.av());
+      values[argnum].type = AKT_VALUE;
+    }
   }
   
   string arg_key::toString() const {
@@ -46,7 +62,7 @@ namespace jdi {
   bool arg_key::operator<(const arg_key& other) const {
     // cout << "Comparing (" << toString() << ") < (" << other.toString() << ")" << endl;
     {
-      int l1 = other.endv - other.values, l2 = endv - values;
+      ptrdiff_t l1 = other.endv - other.values, l2 = endv - values;
       if (l1 != l2)
         return l1 > l2;
     }
@@ -54,7 +70,7 @@ namespace jdi {
       if (i == endv) return true;
       if (i->type == AKT_VALUE) {
         if (j->type != AKT_VALUE) return false;
-        if (i->val().type == VT_DEPENDENT || i->val().type == VT_DEPENDENT) continue;
+        if (i->val().type == VT_DEPENDENT || j->val().type == VT_DEPENDENT) continue;
         if (i->val() < j->val()) return true;
         if (j->val() < i->val()) return false;
       }
@@ -78,6 +94,8 @@ namespace jdi {
   
   void arg_key::mirror_types(definition_template *temp) {
     for (size_t i = 0; i < temp->params.size(); ++i)
+    {
+      destroy_node_storage(values[i]);    
       if (temp->params[i]->flags & DEF_TYPENAME) {
         new(&values[i].data) full_type();
         values[i].type = AKT_FULLTYPE;
@@ -86,10 +104,21 @@ namespace jdi {
         new(&values[i].data) aug_value();
         values[i].type = AKT_VALUE;
       }
+    }
   }
   
-  void arg_key::put_final_type(size_t argnum, const full_type &type) { new (&values[argnum].data) full_type(); values[argnum].ft().copy(type); values[argnum].type = AKT_FULLTYPE; }
-  void arg_key::swap_final_type(size_t argnum, full_type &type)      { new (&values[argnum].data) full_type(); values[argnum].ft().swap(type); values[argnum].type = AKT_FULLTYPE; }
+  void arg_key::put_final_type(size_t argnum, const full_type &type) {
+    destroy_node_storage(values[argnum]);
+    new (&values[argnum].data) full_type();
+    values[argnum].ft().copy(type);
+    values[argnum].type = AKT_FULLTYPE;
+  }
+  void arg_key::swap_final_type(size_t argnum, full_type &type) {
+    destroy_node_storage(values[argnum]);
+    new (&values[argnum].data) full_type();
+    values[argnum].ft().swap(type);
+    values[argnum].type = AKT_FULLTYPE;
+  }
   void arg_key::put_type(size_t argnum, const full_type &type) {
     if (type.def) {
       if (type.def->flags & DEF_DEPENDENT)
@@ -121,6 +150,7 @@ namespace jdi {
     return swap_final_type(argnum, type);
   }
   void arg_key::put_value(size_t argnum, const value &val) {
+    destroy_node_storage(values[argnum]);	  
     new(&values[argnum].data) aug_value(val);
     values[argnum].type = AKT_VALUE;
   }
@@ -131,8 +161,16 @@ namespace jdi {
     return false;
   }
   bool arg_key::is_dependent() const {
-    for (const node* n = values; n != endv; ++n)
-      if (n->is_abstract()) return true;
+    for (const node* n = values; n != endv; ++n) {
+      if (n->type == AKT_VALUE) {
+        if (n->val().type == VT_DEPENDENT)
+          return true;
+      }
+      else if (n->type == AKT_FULLTYPE) {
+        if (n->ft().def && (n->ft().def->flags & DEF_DEPENDENT))
+          return true;
+      }
+    }
     return false;
   }
   int arg_key::conflicts_with(const arg_key &k) const {
@@ -187,6 +225,9 @@ namespace jdi {
   }
   /// Just copy.
   arg_key &arg_key::operator=(const arg_key& other) {
+    if (this == &other)
+      return *this;
+	  
     delete[] values;
     values = new node[other.endv-other.values];
     node *i = values;
@@ -197,13 +238,37 @@ namespace jdi {
   }
   /// Destruct, freeing items.
   arg_key::~arg_key() { delete[] values; }
-  
-  arg_key::node &arg_key::node::operator=(const node& other) {
-    type = other.type;
-    if (type == AKT_FULLTYPE)
+  arg_key::node::node(const node& other): type(AKT_NONE) {
+    if (other.type == AKT_FULLTYPE) {
       new(&data) full_type(other.ft());
-    else
+      type = AKT_FULLTYPE;
+    }
+    else if (other.type == AKT_VALUE) {
       new(&data) aug_value(other.av());
+      type = AKT_VALUE;
+    }
+  }
+ 
+  arg_key::node &arg_key::node::operator=(const node& other) {
+    if (this == &other)
+      return *this;
+
+    if (type == AKT_FULLTYPE)
+      ft().~full_type();
+    else if (type == AKT_VALUE)
+      av().~aug_value();
+
+    type = AKT_NONE;
+
+    if (other.type == AKT_FULLTYPE) {
+      new(&data) full_type(other.ft());
+      type = AKT_FULLTYPE;
+    }
+    else if (other.type == AKT_VALUE) {
+      new(&data) aug_value(other.av());
+      type = AKT_VALUE;
+    }
+      
     return *this;
   }
   

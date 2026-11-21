@@ -62,6 +62,7 @@ namespace jdi {
       inline full_type& ft() { return *(full_type*)&data; }
       inline aug_value& av() { return *(aug_value*)&data; }
       inline value& val() { return *(value*)(aug_value*)&data; }
+      node(const node& other);
       node &operator= (const node& other);
       bool operator!=(const node& x) const;
       
