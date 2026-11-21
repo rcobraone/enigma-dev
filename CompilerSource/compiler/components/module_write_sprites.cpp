@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
+#include <limits>
 
 using namespace std;
 
@@ -69,7 +70,13 @@ int lang_CPP::module_write_sprites(const GameData &game, FILE *gameModule)
     writei(game.sprites[i].id(), gameModule); //id
 
     // Track how many subImages we're copying
-    int subCount = game.sprites[i].image_data.size();
+    const size_t sub_count = game.sprites[i].image_data.size();
+    if (sub_count > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      user << "Sprite `" << game.sprites[i].name
+           << "' contains too many subimages for the game module format." << flushl;
+      return 14;
+    }
+    const int subCount = static_cast<int>(sub_count);
 
     int swidth = 0, sheight = 0;
     for (int ii = 0; ii < subCount; ii++)
@@ -106,9 +113,17 @@ int lang_CPP::module_write_sprites(const GameData &game, FILE *gameModule)
     {
       //strans = game.sprites[i].image_data[ii].transColor, fwrite(&idttrans,4,1,exe); //Transparent color
       writei(swidth * sheight * 4, gameModule); // size when unpacked
-      writei(game.sprites[i].image_data[ii].pixels.size(), gameModule);  // size
+      const size_t pixel_size =
+          game.sprites[i].image_data[ii].pixels.size();
+      if (pixel_size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        user << "Subimage " << ii << " of sprite `"
+             << game.sprites[i].name
+             << "' is too large for the game module format." << flushl;
+        return 14;
+      }
+      writei(static_cast<int>(pixel_size), gameModule);  // size
       fwrite(game.sprites[i].image_data[ii].pixels.data(), 1,
-             game.sprites[i].image_data[ii].pixels.size(), gameModule);  // data
+             pixel_size, gameModule);  // data
       writei(0,gameModule);
     }
   }
