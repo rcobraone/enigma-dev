@@ -331,17 +331,18 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
   static long long checked_integer_conversion(long double value) {
     constexpr long double limit = 9223372036854775808.0L;
 
-  static long long checked_integer_conversion(double value) {
-    constexpr double limit = 9223372036854775808.0;
-
     if (!std::isfinite(value) ||
-        value < -limit ||
-        value >= limit) {
+        value < -limit || value >= limit) {
       throw std::range_error(
           "variant integer conversion out of range");
     }
 
     return static_cast<long long>(value);
+  }
+
+  static long long checked_integer_conversion(double value) {
+    return checked_integer_conversion(
+        static_cast<long double>(value));
   }
 
   static int checked_shift_count(long double value) {
@@ -407,7 +408,7 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
     // TODO: Enable turning this off...
     if (type == enigma_user::ty_pointer)
       return rval.p != nullptr;
-    return lrint(rval.d) > 0;
+    return std::nearbyint(rval.d) > 0.0;
   }
 
   // Char casting must be explicit, or else string construction is ambiguous.
@@ -651,6 +652,7 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
       return sval() >= x.sval();
     }
     if (type == enigma_user::ty_pointer) {
+		if (x.type != enigma_user::ty_pointer) return false;
       return !std::less<const void*>()(rval.p, x.rval.p);
     }
     if (x.type == enigma_user::ty_pointer) return false;   
@@ -771,8 +773,8 @@ struct variant : enigma::variant_real_union, enigma::variant_string_wrapper {
            checked_integer_conversion(checked_numeric_value(x));
   }
   template<typename T>
-  decltype(0LL | (long long)*(T*)nullptr) operator^(T x) const {
-    return checked_integer_conversion(checked_numeric_value(*this)) |
+  decltype(0LL ^ (long long)*(T*)nullptr) operator^(T x) const {
+    return checked_integer_conversion(checked_numeric_value(*this)) ^
            checked_integer_conversion(checked_numeric_value(x));
   }
 
@@ -913,8 +915,8 @@ struct var : variant {
 
   template<typename T>
   std::vector<T> to_vector() const {
-    return {array1d.dense_part().begin(),
-            array1d.dense_part().end()};
+    const auto& dense = array1d.dense_part();
+    return std::vector<T>(dense.begin(), dense.end());
   }
 
   // Annoying overhead and var extensions of variant operators
@@ -937,10 +939,7 @@ struct var : variant {
   using variant::operator~;
 
   #ifndef JUST_DEFINE_IT_RUN // These confuse JDI for some reason
-  var &operator=(const var &v) {
-    *(variant*) this = v;
-    return *this;
-  }
+  var& operator=(const var& v) = default;
 
   template<typename T, REQUIRE_VARIANT_TYPE(T)>
   variant operator+(const T &v) {
@@ -963,28 +962,46 @@ struct var : variant {
     static inline
 
 VARBINOP decltype(+T() + double()) operator+(T a, const U &b) {
+  b.require_real_type("addition requires real variant");
   return a + b.rval.d;
 }
 VARBINOP decltype(+T() - double()) operator-(T a, const U &b) {
+  b.require_real_type("subtraction requires real variant");
   return a - b.rval.d;
 }
 VARBINOP decltype(+T() * double()) operator*(T a, const U &b) {
+  b.require_real_type("multiplication requires real variant");
   return a * b.rval.d;
 }
 VARBINOP decltype(+T() / double()) operator/(T a, const U &b) {
+  b.require_real_type("division requires real variant");
   return a / b.rval.d;
 }
 VARBINOP double operator%(T a, const U &b) {
+  b.require_real_type("modulo requires real variant");
   return fmod(a, b.rval.d);
 }
 
 VARBINOP long long operator<<(T a, const U &b) {
-  const double shift_value = b.rval.d;
-  if (!std::isfinite(shift_value) ||
-      shift_value < 0.0 || shift_value >= 64.0)
+  const long long value =
+      variant::checked_integer_conversion(
+          static_cast<long double>(a));
+
+  const int shift =
+      variant::checked_shift_count(
+          static_cast<long double>(b.rval.d));
+
+  if (shift < 0)
     return 0;
-  const int shift = static_cast<int>(shift_value);    
-  return (long long)a << shift;
+
+  if (value < 0)
+    throw std::range_error("negative value in variant left shift");
+
+  if (value >
+      (std::numeric_limits<long long>::max() >> shift))
+    throw std::range_error("variant left shift overflow");
+
+  return value << shift;
 }
 VARBINOP long long operator>>(T a, const U &b) {
   const double shift_value = b.rval.d;
