@@ -57,12 +57,18 @@ struct scope_ignore {
 void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
                        const std::set<std::string> &script_names,
                        bool trackGotos) {
+  if (parsed_code == nullptr || lang == nullptr || parsed_code->my_scope == nullptr)
+    return;
+						   
   int igpos = 0;
   darray<scope_ignore*> igstack;
   igstack[igpos] = new scope_ignore(0);
 
   std::string &code = parsed_code->code;
   std::string &synt = parsed_code->synt;
+  if (code.size() != synt.size())
+    return;
+
 
   cout << "\nCollecting some variables...\n";
   pt dec_start_pos = 0;
@@ -85,7 +91,7 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
   //Tracking for "exit" commands
   int currGotoBlock = 0;
   bool foundGoto = false;
-  for (pt pos = 0; pos < code.length(); pos++)
+  for (pt pos = 0; pos < code.size() && pos < synt.size(); pos++)
   {
     //Stop grabbing the timeline index?
     if (grab_tline_index) {
@@ -98,6 +104,11 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
       continue;
     }
     if (synt[pos] == '}') {
+      if (igpos == 0) {
+        cerr << "ERROR: unmatched closing brace while collecting variables." << endl;
+        continue;
+      }
+		
       delete igstack[igpos--];
 
       //Have we completed a new block?
@@ -120,7 +131,12 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
     with_until_semi &= (synt[pos] != ';');
     
     if (synt[pos] == '(' and dec_initializing) parenlevel++;
-    if (synt[pos] == ')' and dec_initializing) parenlevel--;
+    if (synt[pos] == ')' and dec_initializing) {
+      if (parenlevel > 0)
+        --parenlevel;
+      else
+        cerr << "ERROR: unmatched closing parenthesis in declaration." << endl;
+    }
     
     if (bracklevel == 0 and parenlevel == 0 and in_decl)
     {
@@ -151,7 +167,11 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
               cout << "ERASE FROM CODE: " << code.substr(dec_start_pos,dec_equals_at-dec_start_pos) << endl;
               code.replace(dec_start_pos,dec_equals_at-dec_start_pos, dec_name);
               synt.replace(dec_start_pos,dec_equals_at-dec_start_pos, string(dec_name.length(),'n'));
-              pos -= dec_equals_at - dec_start_pos - 1 - dec_name.length();
+              const size_t dec_shift =
+                  dec_equals_at - dec_start_pos - 1 - dec_name.length();
+              if (dec_shift > pos)
+                return;
+              pos -= dec_shift;
             }
             dec_start_pos = pos;
           }
@@ -200,27 +220,41 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
       if (in_decl and !dec_initializing)
       {
         pt ep = pos + 1;
-        for (int bc = 1; bc > 0; ep++)
+        for (int bc = 1; bc > 0 && ep < synt.size(); ep++)
           if (synt[ep] == '[') bc++;
           else if (synt[ep] == ']') bc--;
+
+        if (ep > synt.size()) {
+          ep = synt.size();
+        }
+                    
         dec_suffixes += code.substr(pos,ep - pos);
       }
       bracklevel++;
       continue;
     }
     if (synt[pos] == ']') {
-      bracklevel--;
+      if (bracklevel == 0) {
+        cerr << "ERROR: unmatched closing bracket while collecting variables." << endl;
+        continue;
+      }
+      --bracklevel;
       continue;
     }
     
     if (synt[pos] == 'L') //Double meaning.
     {
       //Bookmark this spot
-      const int sp = pos;
+      const pt sp = pos;
       
       //Determine which meaning it is.
+      if (pos + 5 >= synt.size()) {
+        continue;
+      }
       pos += 5; //Skip "L-O-C-A-L" or "G-L-O-B-A"
-      if (synt[pos] == 'L') pos++;
+      if (pos < synt.size() && synt[pos] == 'L') pos++;
+      if (pos >= synt.size())
+        continue;
       if (synt[pos] != 't')
       {
         for (pt i = sp; i < pos; i++)
@@ -243,8 +277,10 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
       past_this_if:
       
       //Skip to the end of the typename, remember where we started
-      const int tsp = pos;
-      while (synt[++pos] == 't');
+      const pt tsp = pos;
+      while (pos + 1 < synt.length() && synt[++pos] == 't');
+      if (pos >= synt.length())
+        return;
       
       //Copy the type
       dec_type = code.substr(tsp,pos-tsp);
@@ -270,7 +306,7 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
       bool nts = !pos or synt[pos-1] != '.';
       
       const pt spos = pos;
-      while (synt[++pos] == 'n');
+      while (pos + 1 < synt.length() && synt[++pos] == 'n');
       
       //Looking at a straight identifier. Make sure it actually needs declared.
       string nname = code.substr(spos,pos-spos);
@@ -286,7 +322,10 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
         }
         code.replace(spos, 4, newName.str());
         synt.replace(spos, 4, string(newName.str().size(), 'X'));
-        pos += (newName.str().size()-4 - 1);
+        const size_t replacement_size = newName.str().size();
+        if (replacement_size < 5)
+          return;
+        pos += replacement_size - 5;
         continue;
       }
       
@@ -346,6 +385,8 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
         iscr = sscanf(nname.c_str(),"argument%d",&argnum);
         if (iscr == 1)
         { //  not in a script or are but have exceeded arg number
+          if (argnum < 0)
+            continue;	
           if (global_script_argument_count < argnum + 1)
             global_script_argument_count = argnum + 1;
           continue;
@@ -386,9 +427,13 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
 
         //If this is a specific action, we can actually grab timeline indices.
         if (nname == "action_set_timeline") {
-            size_t nextSep = synt.find_first_not_of("n", pos+2);
+            const size_t arg_start = pos + 2;
+            if (arg_start >= synt.length())
+              continue;
+
+            size_t nextSep = synt.find_first_not_of("n", arg_start);           
             if (nextSep != std::string::npos) {
-              const string pname = code.substr(pos+2,nextSep-(pos+2));
+              const string pname = code.substr(arg_start,nextSep-arg_start);
               cout << "  Potentially calls timeline `" << pname << "'\n";
               parsed_code->my_scope->tlines.insert(pair<string,int>(pname,1));
             }
@@ -396,9 +441,13 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
 
         //Another special case: try to inline script_execute().
         if (nname == "script_execute") {
-            size_t nextSep = synt.find_first_not_of("n", pos+2);
+            const size_t arg_start = pos + 2;
+            if (arg_start >= synt.length())
+              continue;
+
+            size_t nextSep = synt.find_first_not_of("n", arg_start);
             if (nextSep != std::string::npos) {
-              const string pname = code.substr(pos+2,nextSep-(pos+2));
+              const string pname = code.substr(arg_start,nextSep-arg_start);
               if (script_names.find(pname)!=script_names.end()) {
                 cout << "  script_execute() inlining `" << pname << "'\n";
                 int off = synt[nextSep]==')' ? 0 : 1;
@@ -424,6 +473,10 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
             pars++; continue;
           }
         }
+
+        if (pars)
+          continue;
+        
         args += contented; //Final arg for closing parentheses
         pair<parsed_object::funcit,bool> a = parsed_code->my_scope->funcs.insert(pair<string,int>(nname,args));
         if (!a.second and a.first->second < signed(args))
@@ -434,9 +487,8 @@ void collect_variables(language_adapter *lang, ParsedCode *parsed_code,
     else if (synt[pos] == 's')
     {
       const size_t sp = pos;
-      while (synt[++pos] == 's');
-      if (code.substr(sp,(pos--)-sp) == "with") {
-        with_after_parenths = 1;
+      while (pos + 1 < synt.length() && synt[++pos] == 's');
+       if (code.substr(sp,(pos--)-sp) == "with") {
         continue;
       }
     }
