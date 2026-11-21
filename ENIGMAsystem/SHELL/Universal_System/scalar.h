@@ -66,6 +66,12 @@ typedef float cs_scalar;
 
 #include <math.h>
 
+// M_PI is not guaranteed by the C++17 standard.
+// Provide a portable fallback for platforms that do not define it.
+#ifndef M_PI
+  #define M_PI 3.14159265358979323846
+#endif
+
 #ifdef MA_ANGULAR_UNIT_RADIANS
 #define ma_angle_from_radians(radians) (radians)
 #define ma_angle_to_radians(degrees) (degrees)
