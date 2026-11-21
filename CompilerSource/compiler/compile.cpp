@@ -72,6 +72,30 @@ using namespace std;
 std::map <string, char> unimplemented_function_list;
 #endif
 
+static std::string cpp_string_literal(const std::string& value)
+{
+  std::string result;
+  result.reserve(value.size() + 2);
+  result.push_back('"');
+
+  for (const unsigned char c : value)
+  {
+    switch (c)
+    {
+      case '\\': result += "\\\\"; break;
+      case '"':  result += "\\\""; break;
+      case '\n': result += "\\n";  break;
+      case '\r': result += "\\r";  break;
+      case '\t': result += "\\t";  break;
+      case '\0': result += "\\0";  break;
+      default:   result.push_back(static_cast<char>(c)); break;
+    }
+  }
+
+  result.push_back('"');
+  return result;
+}
+
 inline void writei(int x, FILE *f) {
   fwrite(&x,4,1,f);
 }
@@ -147,30 +171,53 @@ inline void write_exe_info(const std::filesystem::path& codegen_directory, const
 
 static int write_res_helper(FILE* gameModule, int& resourceblock_start, const GameData &game) {
   // Start by setting off our location with a DWord of NULLs
-  fwrite("\0\0\0",1,4,gameModule);
+  if (fwrite("\0\0\0", 1, 4, gameModule) != 1) {
+    fclose(gameModule);
+   return 1;
+  }
 
   idpr("Adding Sprites",90);
 
   int res = current_language->module_write_sprites(game, gameModule);
   if (res) { 
-    idpr("Error occurred; see scrollback for details.",-1); 
+    idpr("Error occurred; see scrollback for details.",-1);
+    fclose(gameModule); 
     return res;
   }
 
   edbg << "Finalized sprites." << flushl;
   idpr("Adding Sounds",93);
 
-  current_language->module_write_sounds(game, gameModule);
+  res = current_language->module_write_sounds(game, gameModule);
+  if (res) {
+    fclose(gameModule);
+    return res;
+  }
 
-  current_language->module_write_backgrounds(game, gameModule);
+  res = current_language->module_write_backgrounds(game, gameModule);
+  if (res) {
+    fclose(gameModule);
+    return res;
+  }
 
-  current_language->module_write_fonts(game, gameModule);
+  res = current_language->module_write_fonts(game, gameModule);
+  if (res) {
+    fclose(gameModule);
+    return res;
+  }
 
-  current_language->module_write_paths(game, gameModule);
+  res = current_language->module_write_paths(game, gameModule);
+  if (res) {
+    fclose(gameModule);
+    return res;
+  }
 
   // Tell where the resources start
-  fwrite("\0\0\0\0res0",8,1,gameModule);
-  fwrite(&resourceblock_start,4,1,gameModule);
+  if (fwrite("\0\0\0\0res0", 8, 1, gameModule) != 1 ||
+      fwrite(&resourceblock_start, 4, 1, gameModule) != 1) {
+    fclose(gameModule);
+    return 1;
+  }
 
   // Close the game module; we're done adding resources
   idpr("Closing game module and running if requested.",99);
@@ -204,7 +251,8 @@ template<typename T> void write_resource_meta(ofstream &wto, const char *kind, v
   for (const T &res : resources) {
     if (res.id() >= max) max = res.id() + 1;
     wto << "    " << res.name << " = " << res.id() << ",\n";
-    swb << "      case " << res.id() << ": return \""  << res.name << "\";\n";
+    swb << "      case " << res.id()
+        << ": return " << cpp_string_literal(res.name) << ";\n";
   }
   wto << "  };\n\n";
   if (gen_names) {
@@ -256,10 +304,11 @@ void wite_asset_enum(const std::filesystem::path& fName) {
   wto.close();
 }
     
-template<typename T> void write_asset_map(std::string& str, vector<T> resources, const std::string& type) {
+template<typename T> void write_asset_map(std::string& str, const vector<T>& resources, const std::string& type) {
   str += "\n{ enigma_user::" + type + ",\n  {\n";
   for (const T &res : resources) {
-    str += "    { \"" + res.name  + "\", " + std::to_string(res.id()) + " },\n";
+str += "    { " + cpp_string_literal(res.name) + ", "
+    + std::to_string(res.id()) + " },\n";
   }
   
   if (resources.size() > 0) { str.pop_back(); str.back() = '\n'; }
@@ -331,13 +380,15 @@ std::set<EventGroupKey> ListUsedEvents(
 }
 
 int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) {
-  std::filesystem::path exename;
+  std::string exe_filename_storage;
+  
   if (exe_filename) {
     exename = exe_filename;
     const std::filesystem::path buildext = compilerInfo.exe_vars["BUILD-EXTENSION"];
     if (!string_ends_with(exename.u8string(), buildext.u8string())) {
       exename += buildext;
-      exe_filename = exename.u8string().c_str();
+      exe_filename_storage = exename.u8string();
+      exe_filename = exe_filename_storage.c_str();
     }
   }
 
@@ -490,7 +541,8 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
 
   idpr("Adding resources...",90);
   std::filesystem::path desstr = "./ENIGMAsystem/SHELL/design_game" + compilerInfo.exe_vars["BUILD-EXTENSION"];
-  std::filesystem::path gameFname = mode == emode_design ? desstr.u8string().c_str() : (desstr = exe_filename, exe_filename); // We will be using this first to write, then to run
+  std::filesystem::path gameFname =
+      mode == emode_design ? desstr : std::filesystem::path(exe_filename); // We will be using this first to write, then to run
 
   edbg << "Writing executable information and resources." << flushl;
   if (compilerInfo.target_platform == "Windows")
@@ -544,8 +596,9 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
 
   wto << "namespace enigma {\n";
   std::string res_in = (compilerInfo.exe_vars["RESOURCES_IN"] != "") ? "RESOURCES_IN" : "RESOURCES";
-  wto << "const char *resource_file_path=\"" << compilerInfo.exe_vars[res_in] << "\";\n";
-  wto << "}\n";
+  wto << "const char *resource_file_path="
+      << cpp_string_literal(compilerInfo.exe_vars[res_in])
+      << ";\n";
 
   write_resource_meta(wto,     "object", game.objects);
   write_resource_meta(wto,     "sprite", game.sprites);
@@ -691,17 +744,34 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
     auto resname = resfile.u8string();
     auto respath = resfile.parent_path().u8string();
    
-    e_execs("mkdir -p " + respath);
+
+    std::error_code e_execs;
+    std::filesystem::create_directories(resfile.parent_path(), e_execs);
+    if (e_execs) {
+      user << "Failed to create resource directory, `" << respath
+           << "`: " << e_execs.message() << flushl;
+      idpr("Failed to create resource directory.", -1);
+      return 12;
+    }
    
-    for (size_t p = resname.find("$exe"); p != string::npos; p = resname.find("$game"))
-      resname.replace(p,4,gameFname.u8string());
+    const std::string game_filename = gameFname.u8string();
+    size_t p;
+    while ((p = resname.find("$exe")) != string::npos)
+      resname.replace(p, 4, game_filename);
+    while ((p = resname.find("$game")) != string::npos)
+      resname.replace(p, 5, game_filename);
+      
     gameModule = fopen(resname.c_str(),"wb");
     if (!gameModule) {
       user << "Failed to write resources to compiler-specified file, `" << resname << "`. Write permissions to valid path?" << flushl;
       idpr("Failed to write resources.",-1); return 12;
     }
 
-    write_res_helper(gameModule, resourceblock_start, game);
+    res = write_res_helper(gameModule, resourceblock_start, game);
+    if (res) {
+      idpr("Failed to write resources.", -1);
+      return 12;
+    }
   }
 
   /**  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -758,7 +828,17 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
 
     // Pick a file and flush it
     const std::filesystem::path redirfile = (eobjs_directory/"enigma_compile.log");
-    fclose(fopen(redirfile.u8string().c_str(),"wb"));
+
+    FILE *redir = fopen(redirfile.u8string().c_str(), "wb");
+    if (!redir) {
+      user << "Failed to create compiler log file, `"
+           << redirfile.u8string() << "`." << flushl;
+      ide_output_redirect_reset();
+      idpr("Failed to create compiler log.", -1);
+      return E_ERROR_BUILD;
+    }
+    fclose(redir);
+
 
     // Redirect it
     ide_output_redirect_file(redirfile.u8string().c_str()); //TODO: If you pass this function the address it will screw up the value; most likely a JNA/Plugin bug.
@@ -794,15 +874,31 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
       idpr("Failed to add resources.",-1); return 12;
     }
 
-    fseek(gameModule,0,SEEK_END); //necessary on Windows for no reason.
-    resourceblock_start = ftell(gameModule);
+    if (fseek(gameModule, 0, SEEK_END) != 0) {
+      fclose(gameModule);
+      idpr("Failed to seek in game module.", -1);
+      return 13;
+    }
+
+    const long resource_offset = ftell(gameModule);
+    if (resource_offset < 0 || resource_offset > INT_MAX) {
+      fclose(gameModule);
+      idpr("Failed to determine game module size.", -1);
+      return 13;
+    }
+
+    resourceblock_start = static_cast<int>(resource_offset);
 
     if (resourceblock_start < 128) {
       user << "Compiled game is clearly not a working module; cannot continue" << flushl;
       idpr("Failed to add resources.",-1); return 13;
     }
 
-    write_res_helper(gameModule, resourceblock_start, game);
+    res = write_res_helper(gameModule, resourceblock_start, game);
+    if (res) {
+      idpr("Failed to add resources.", -1);
+      return 12;
+    }
   }
 
 
@@ -815,6 +911,12 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
     // This the exact behaviour of GM8.1
     std::vector<char> prevdir(size_t(4096));
     string newdir = game.filename.empty() ? exe_filename : game.filename;
+
+    if (newdir.empty()) {
+      user << "Cannot determine game working directory." << flushl;
+      idpr("Invalid game executable path.", -1);
+      return E_ERROR_BUILD;
+    }
     #if CURRENT_PLATFORM_ID == OS_WINDOWS
       if (newdir[0] == '/' || newdir[0] == '\\') {
         newdir = newdir.substr(1, newdir.size());
@@ -824,10 +926,27 @@ int lang_CPP::compile(const GameData &game, const char* exe_filename, int mode) 
 
     #if CURRENT_PLATFORM_ID == OS_WINDOWS
     GetCurrentDirectory( 4096, prevdir.data() );
-    SetCurrentDirectory(newdir.c_str());
+    //Windows
+    if (!SetCurrentDirectoryA(newdir.c_str())) {
+      user << "Failed to change game working directory to `"
+           << newdir << "`" << flushl;
+      return E_ERROR_BUILD;
+    }
     #else
-    getcwd (prevdir.data(), 4096);
-    chdir(newdir.c_str());
+    if (!getcwd(prevdir.data(), prevdir.size())) {
+      user << "Failed to determine current working directory."
+           << flushl;
+      idpr("Failed to determine working directory.", -1);
+      return E_ERROR_BUILD;
+    }
+    
+    //Linux
+    if (chdir(newdir.c_str()) != 0) {
+      user << "Failed to change working directory to `"
+           << newdir << "`." << flushl;
+      idpr("Failed to change working directory.", -1);
+      return E_ERROR_BUILD;
+    }
     #endif
 
     string rprog = compilerInfo.exe_vars["RUN-PROGRAM"], rparam = compilerInfo.exe_vars["RUN-PARAMS"];
