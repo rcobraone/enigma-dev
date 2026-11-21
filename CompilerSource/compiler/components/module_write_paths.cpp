@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
+#include <limits>
 
 using namespace std;
 
@@ -76,7 +77,13 @@ int lang_CPP::module_write_paths(const GameData &game, FILE *gameModule)
     // possibly snapX/Y?
 
     // Track how many path points we're copying
-    int pointCount = game.paths[i]->points().size();
+    const size_t point_count = game.paths[i]->points().size();
+    if (point_count > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      user << "Path `" << game.paths[i]->name
+           << "' contains too many points for the game module format." << flushl;
+      return 14;
+    }
+    const int pointCount = static_cast<int>(point_count);
     writei(pointCount,gameModule);
 
     for (int ii = 0; ii < pointCount; ii++)
