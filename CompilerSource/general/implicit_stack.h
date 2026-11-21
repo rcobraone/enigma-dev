@@ -26,6 +26,9 @@
 \********************************************************************************/
 
 #include <stdlib.h>
+#include <limits>
+#include <new>
+#include <cstring>
 
 template <typename atype>
 struct implicit_stack
@@ -38,10 +41,18 @@ struct implicit_stack
     ind++;
     if (allocd<=ind)
     {
-      int olds=allocd;
-      while (allocd<=ind) allocd<<=1;
+      unsigned int olds=allocd;
+      while (allocd <= ind)
+      {
+        if (allocd > std::numeric_limits<unsigned int>::max() / 2)
+        {
+          ind--;
+          return;
+        }
+        allocd <<= 1;
+      }
 
-      atype** nar=new atype*[allocd];
+      atype** nar=new (std::nothrow) atype*[allocd];
       if (nar==0)
       {
         ind--;
@@ -50,7 +61,7 @@ struct implicit_stack
       }
       if (olds>0)
       {
-        memcpy(nar,astack,olds*sizeof(atype*));
+        std::memcpy(nar,astack,olds*sizeof(atype*));
         for (unsigned int i=olds;i<allocd;i++) nar[i]=0;
       }
 
@@ -62,6 +73,9 @@ struct implicit_stack
   }
   void pop()
   {
+    if (ind == 0)
+      return;
+	  
     delete astack[ind];
     astack[ind]=0;
     ind--;
@@ -75,17 +89,23 @@ struct implicit_stack
   implicit_stack()
   {
     ind=0;
-    safety = new atype;
-    astack=new atype*[1];
-    allocd=astack!=NULL;
-    if (safety==0 or allocd==0) exit(-18);
-    astack[0]=new atype;
-    if (astack[0]==0) exit(-18);
+    safety = new (std::nothrow) atype;
+    astack = new (std::nothrow) atype*[1];
+   allocd=astack!=NULL;
+    if (safety == NULL || allocd == 0)
+      exit(-18);
+    astack[0] = new (std::nothrow) atype;
+    if (astack[0] == NULL)
+      exit(-18);
   }
   ~implicit_stack()
   {
     if (astack != 0)
-    for (unsigned int i=0; i<ind; i++)
-    delete astack[i];
+    {
+      for (unsigned int i=0; i<=ind; i++)
+        delete astack[i];
+      delete [] astack;
+    }
+    delete safety;
   }
 };
