@@ -79,7 +79,13 @@ int lang_CPP::module_write_backgrounds(const GameData &game, FILE *gameModule)
     writei(game.backgrounds[i]->horizontal_spacing(), gameModule);
     writei(game.backgrounds[i]->vertical_spacing(),   gameModule);
 
-    const int sz = game.backgrounds[i].image_data.pixels.size();
+    const size_t pixel_size = game.backgrounds[i].image_data.pixels.size();
+    if (pixel_size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      user << "Background `" << game.backgrounds[i].name
+           << "' image data is too large for the game module format." << flushl;
+      return 14;
+    }
+    const int sz = static_cast<int>(pixel_size);
     writei(sz, gameModule); // size
     fwrite(game.backgrounds[i].image_data.pixels.data(), 1, sz, gameModule); // data
   }
