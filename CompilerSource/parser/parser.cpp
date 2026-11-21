@@ -153,6 +153,9 @@ void parser_init()
 
 void parser_main(ParsedCode* pev, const std::set<std::string>& script_names, bool isObject)
 {
+  if (pev == nullptr)
+    return;
+	
   //Converting EDL to C++ is still relatively simple.
   //It can be done, for the most part, using only find and replace.
 
@@ -167,16 +170,8 @@ void parser_main(ParsedCode* pev, const std::set<std::string>& script_names, boo
   //Initialize us a spot in the global scope
   initscope("script scope");
 
-  if (pev) {
-    pev->strc = 0; //Number of strings in this code
-    parser_ready_input(code,synt,pev->strc,pev->strs);
-  }
-  else
-  {
-    varray<string> strst;
-    unsigned int strct = 0;
-    parser_ready_input(code,synt,strct,strst);
-  }
+  pev->strc = 0;
+  parser_ready_input(code,synt,pev->strc,pev->strs);
   parser_reinterpret(code,synt);
   if (setting::automatic_semicolons) {
     parser_add_semicolons(code,synt);
@@ -191,6 +186,9 @@ typedef map<string,dectrip> localscope;
 pt move_to_beginning(string& code, string& synt, pt pos)
 {
   (void) code;
+  if (synt.empty() || pos >= synt.size())
+    return 0;
+ 
   bool lparenth = false; // true if the last symbol set skipped from this block was a set of brackets
   backloop:
   while (synt[pos] == ']' or synt[pos] == ')') // Seek to beginning of array subscripts and function args
@@ -198,27 +196,37 @@ pt move_to_beginning(string& code, string& synt, pt pos)
     lparenth = synt[pos] == ')';
     if (synt[pos] == ']' or synt[pos] == ')')
     {
-      for (int cnt = (pos--, 1); cnt; pos--)
+      for (int cnt = (pos > 0 ? (pos--, 1) : 0); cnt; )
       {
         if (synt[pos] == '[' or synt[pos] == '(') cnt--;
         else if (synt[pos] == ')' or synt[pos] == ']') cnt++;
-        if (!pos) goto hell; //Break 2;
+        if (!pos) goto hell;
+        --pos;
       }
     }
   } // at beginning of function args/array subscripts
   if (lparenth and synt[pos] != 'n')
     return pos + 1;
-  for (const char c = synt[pos--]; synt[pos] == c; pos--)
-    if (!pos) goto hell;
+  if (!pos)
+    goto hell;
+  {
+    const char c = synt[pos--];
+    while (pos < synt.size() && synt[pos] == c)
+    {
+      if (!pos)
+        goto hell;
+      --pos;
+    }
+  }
   pos++;
 
   hell:
   if (pos) {
     if (synt[pos-1] == '.')
       { pos-=2; goto backloop; }
-    if (synt[pos-1] == '>' and pos - 1 and synt[pos-2] == '-')
+    if (pos >= 2 and synt[pos-1] == '>' and synt[pos-2] == '-')
       { pos -= 3; goto backloop; }
-    if (synt[pos-1] == ':' and synt[pos-2] == ':')
+    if (pos >= 2 and synt[pos-1] == ':' and synt[pos-2] == ':')
       { pos -= 3; goto backloop; }
   }
 
@@ -227,7 +235,10 @@ pt move_to_beginning(string& code, string& synt, pt pos)
 
 pt end_of_brackets(const string& synt, pt pos) // Given a string and the index OF the first bracket, find the matching right bracket.
 {
-  for (int lvl=0; synt[pos]; pos++)
+  if (pos >= synt.size())
+    return synt.size();	
+	
+  for (int lvl=0; pos < synt.size(); pos++)
   {
     if (synt[pos] == '[') lvl++;
     if (synt[pos] == '(') lvl++;
@@ -278,7 +289,7 @@ int make_hash(const lexpair& lp, ParsedCode* pev) {
   if (is_float(lp)) return int(atof(lp.code.c_str()) * 65536);
 
   // Now we assume it's a string and apply a simple hash
-  int r = 0;
+  uint32_t r = 0;
   for (int i = 0; i < lp.strc; i++) {
     string a = pev->strs[lp.stri + i];
     if (a.length() > 1) {
@@ -286,17 +297,21 @@ int make_hash(const lexpair& lp, ParsedCode* pev) {
       else if (a[0] == '\'' and a[a.length() - 1] == '\'') a = a.substr(1,a.length()-2);
     }
     for (pt ii = 0; ii < a.length(); ii++)
-      r = 31*r + a[ii];
+      r = 31u * r + static_cast<unsigned char>(a[ii]);
   }
-  return r;
+  return static_cast<int32_t>(r);
 }
 
 //Retrieve the current token based on a syntax tag. Returns false if the end of the string is reached (there will always be a closing "};").
 //Also advances the current position in the syntax string (which runs in parallel to code); it will point to the first letter not matching the tag.
 bool scan_token(string& res, pt& pos, const string& code, const string& synt, char syntaxTag) {
   pt origPos = pos;
-  while (synt[++pos] == syntaxTag) {
-    if (pos==synt.size()-1) { return false; }
+  while (pos < synt.size()) {
+    ++pos;
+    if (pos >= synt.size())
+      return false;
+    if (synt[pos] != syntaxTag)
+      break;
   }
   res = code.substr(origPos, pos-origPos);
   return true;
@@ -306,6 +321,9 @@ bool scan_token(string& res, pt& pos, const string& code, const string& synt, ch
 //If you pass in a valid syntax tag, the last string with that tag will be saved in "res". So, if you pass 'n' to the above example, you will get "xyz".
 //Returns false if the end of the string is reached (there will always be a closing "};").
 bool skip_paren(string& res, pt& pos, const string& code, const string& synt, char syntaxTag) {
+  if (pos >= synt.size())
+    return fal	
+	
   int paren = 0;
   do {
     char c = synt[pos];
@@ -327,8 +345,13 @@ bool skip_paren(string& res, pt& pos, const string& code, const string& synt, ch
 }  // namespace
 
 int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
+  if (parsed_code == nullptr)
+    return -1;	
+	
   string &code = parsed_code->code;
   string &synt = parsed_code->synt;
+  if (code.size() != synt.size())
+    return -1;
 
   // We'll have to again keep track of temporaries
   // Fortunately, this time, there are no context-dependent tokens to resolve
@@ -347,8 +370,12 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
     if (synt[pos] == 't')
     {
       pt spos = pos;
-      while (synt[++pos] == 't'); // Move to end of type
+      while (pos + 1 < synt.size() && synt[pos + 1] == 't')
+        ++pos; // Move to end of type     
       pos += parser_fix_templates(code,pos,spos,&synt); // This will default template parameters for you and return the change in end position
+
+      if (pos >= synt.size())
+        break;
 
       if (rhs or indecl or synt[pos] == '(') // It's not a declaration if we're on the right of an =, already in a declaration, or are a cast (followed by a parenthesis)
         { pos--; continue; }
@@ -359,7 +386,7 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
       pos--; continue;
     }
     // Handle parsing in dot access (add calls to dot-access routines)
-    else if (synt[pos] == '.' and synt[pos+1] == 'n')
+    else if (synt[pos] == '.' &&
     {
       const pt epos = pos--;
       pos = move_to_beginning(code,synt,pos);
@@ -370,7 +397,9 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
       pt ep = pos = epos; // Restore our original ending position.
 
       // Determine the member being accessed
-      while (synt[++ep] == 'n');
+      while (++ep < synt.size() && synt[ep] == 'n');
+      if (ep >= synt.size())
+        break;
       string member = code.substr(epos+1,ep-epos-1);
 
       // Determine the type of the left-hand expression
@@ -430,15 +459,20 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
     }
     else if (synt[pos] == '[' and (!indecl or deceq))
     {
+      if (pos == 0)
+        continue;
+		
       const pt sp = move_to_beginning(code,synt,pos-1);
       const string exp = code.substr(sp,pos-sp);
       
       bool replace = false;
-      for (size_t pars = 0, bracks = 1, pot = pos + 1; bracks > 0 and pot < synt.length(); ++pot) {
+      {
+      for (int pars = 0, bracks = 1; pt pot = pos + 1; bracks > 0 && pot < synt.size(); ++pot) {
         if (synt[pot] == '(') {
           ++pars;
         } else if (synt[pot] == ')') {
-          --pars;
+          if (pars > 0)
+            --pars;
         } else if (synt[pot] == '[') {
           ++bracks;
         } else if (synt[pot] == ']') {
@@ -456,10 +490,14 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
         //cout << "is a var array" << endl;
         pt cp = pos;
         code[cp++] = '(';
-        for (int cnt = 1; cnt; cp++)
+        for (int cnt = 1; cnt && cp < synt.size(); ++cp)
           if (synt[cp] == '[') cnt++;
           else if (synt[cp] == ']') cnt--;
-        if (synt[--cp] == ']')
+
+        if (cp == 0 || cp > synt.size())
+          continue;
+        --cp;
+        if (synt[cp] == ']')
           code[cp] = ')';
       //} else if (n.pad or n.deref) { // Regardless of type, as long as we have some kind of pointer to be dereferenced
       } else {
@@ -528,7 +566,7 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
                 //Are we calling a valid script?
                 if (state.script_lookup.find(funcName) != state.script_lookup.end()) {
                   //This needs to be globally scoped, unless we've done this already (with inside with)
-                  if (code[oldPos-1] != ':') { //TODO: We could presumably fix nested "with (x) { with(self) {}}" here, if it occurs often in practice.
+                  if (oldPos == 0 || code[oldPos-1] != ':') { { //TODO: We could presumably fix nested "with (x) { with(self) {}}" here, if it occurs often in practice.
                     code.insert(oldPos, "::");
                     synt.insert(oldPos, "XX"); //TODO: I have no idea what syntax to use here.
                     pos += 2;
@@ -549,6 +587,8 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
                 std::cout <<"ERROR: Parentheses don't match on \"" <<ctrlType <<"\" statement.\n";
                 break;
               }
+          if (pos >= synt.size())
+            break;
 
               //If the control type is "with", we can only proceed if it doesn't use "self"
               if (ctrlType=="with") { 
@@ -628,7 +668,8 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
       case ']':
         if (inbrack)
           inbrack--;
-        level--;
+        if (level > 0)
+          --level;
         break;
 
 
@@ -654,7 +695,9 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
         deceq |= indecl;
         if (setting::use_gml_equals and (level or rhs))
         {
-          if (infor != 3 and infor != 1 and synt[pos-1] != '=' and synt[pos+1] != '=') {
+          if (infor != 3 && infor != 1 &&
+              (pos == 0 || synt[pos-1] != '=') &&
+              (pos + 1 >= synt.size() || synt[pos+1] != '=')) {
             pos++;
             code.insert(pos,"=");
             synt.insert(pos,"=");
@@ -665,22 +708,29 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
       case 'n':
           if (!inbrack and !deceq) {
             const pt sp = pos;
-            while (synt[++pos] == 'n');
+            while (pos + 1 < synt.size() && synt[++pos] == 'n');
             dname = code.substr(sp,pos-- - sp);
             break;
           }
-          while (synt[++pos] == 'n');
+          while (pos + 1 < synt.size() && synt[++pos] == 'n');
           pos--; break;
 
       case '(': level++; break;
       case ')':
           if (level == 1 and infor == 1)
             infor = 0;
-          if (!level) cerr << "SUPER FUCKING ERROR ALERT: UNMATCHED PARENTHESIS READ AT POS=" << pos << " [snippet `" << code.substr(pos-10,20).insert(10,"<<>>") << "`]" << endl;
+          if (!level) {
+            const size_t snippet_start = pos > 10 ? pos - 10 : 0;
+            const size_t snippet_offset = pos - snippet_start;
+            string snippet = code.substr(snippet_start, 20);
+            snippet.insert(snippet_offset, "<<>>");
+            cerr << "SUPER FUCKING ERROR ALERT: UNMATCHED PARENTHESIS READ AT POS="
+                 << pos << " [snippet `" << snippet << "`]" << endl;
+          }
           level--;
         break;
       case ':':
-        if (synt[pos + 1] == '=') // EXPLICIT assign
+        if (pos + 1 < synt.size() && synt[pos + 1] == '=') // EXPLICIT assign
         {
           code.erase(pos,1);
           synt.erase(pos,1);
@@ -693,21 +743,21 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
       case '!':
           goto notAss;
       case '<':
-        if (synt[pos+1] == '>') {
+        if (pos + 1 < synt.size() && synt[pos+1] == '>') {
           code.replace(pos,2,"!=");
           synt.replace(pos,2,"!=");
           pos++; break;
         }
       case '>':
-        if (synt[pos-1] != synt[pos]) // Handles <=, >=, which are not assignment operators!
+        if (pos == 0 || synt[pos-1] != synt[pos]) // Handles <=, >=, which are not assignment
           goto notAss;
         goto Ass;
       
       case '+': case '-': 
-          if (synt[pos] == synt[pos+1])
+          if (pos + 1 < synt.size() && synt[pos] == synt[pos+1])
           { pos++; continue; }
       case '^':
-        if (synt[pos+1] == '^') {
+        if (pos + 1 < synt.size() && synt[pos+1] == '^') {
           int n = 2;
           if (pos+2 < synt.length() && synt[pos+2] == '^') n++;
           code.replace(pos,n,"log_xor");
@@ -716,13 +766,13 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
         }
       case '&': case '|': case '~': case '/': case '%':
           Ass: // Assignment operator
-          if (synt[pos+1] == '=') {
+          if (pos + 1 < synt.size() && synt[pos+1] == '=') {
             deceq |= indecl;
             rhs |= !level;
             pos++; break;
           }
           notAss: //Not an assignment operator; !=, >=, <=
-            if (synt[pos+1] == '=')
+            if (pos + 1 < synt.size() && synt[pos+1] == '=')
               pos++; // Already know it isn't an assignment; already handled.
         break;
       case '{':
@@ -741,7 +791,7 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
       case 'f': // We need to be aware of for loops.
         infor = 3;
       default:
-        while (synt[pos] == synt[pos+1]) pos++;
+        while (pos + 1 < synt.length() && synt[pos] == synt[pos+1]) pos++;
     }
   }
 
@@ -759,7 +809,12 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
 
       const pt switch_start_pos = pos;
 
-      while (synt[++pos] == 's');
+      while (pos + 1 < synt.size() && synt[pos + 1] == 's')
+        ++pos;
+
+      if (pos >= synt.size())
+        break;
+
       string ss(code,switch_start_pos,pos-switch_start_pos);
       if (ss != "switch")
         continue;
@@ -767,9 +822,16 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
       int strs_this_statement = 0;
       const pt switch_value_spos = pos;
 
-      while (synt[pos++] != '{') { // We can skip the first char, because at this juncture, it's garanteed to be an opening parenthesis.
-        string_index += synt[pos] == '"' or synt[pos] == '\''; // Increment the overall index here; we'll be skipping these strings later on.
+      while (pos < synt.size() && synt[pos] != '{') {
+         string_index += synt[pos] == '"' or synt[pos] == '\'';
+        ++pos;
       }
+      if (pos >= synt.size()) {
+        std::cout << "ERROR: switch statement runs to end of code without an opening brace." << endl;
+        break;
+      }
+      ++pos;
+     
       const string
         svalue   (code, switch_value_spos, pos - switch_value_spos - 1),
         svaluelex(synt, switch_value_spos, pos - switch_value_spos - 1);
@@ -779,8 +841,13 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
       vector<lexpair> cases;
       pt default_start_pos = 0; // 0 for no default, nonzero indicates position
 
-      while (level)
+      while (level && pos < synt.size())
       {
+        if (pos >= synt.size()) {
+          cerr << "ERROR: switch statement runs to end of code without a closing brace." << endl;
+          break;
+        }
+		  
         if (synt[pos] == '{')
         { level++; pos++; continue; }
         if (synt[pos] == '}')
@@ -794,18 +861,23 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
           const pt espos = pos;
           const pt tstrc = string_index + strs_this_statement; // The number of strings before this case label
           int strnum = 0; // The number of strings in this case label
-          while (synt[pos] != ':') {
+          while (pos < synt.size() && synt[pos] != ':') {
             if (synt[pos] == '"' or synt[pos] == '\'')
               ++strs_this_statement, ++strnum;
             ++pos;
           }
+           if (pos >= synt.size()) {
+             cerr << "ERROR: case label runs to end of switch without ':'." << endl;
+             break;
+           }          
           cases.push_back(lexpair(string(code,espos,pos-espos),string(synt,espos,pos-espos),cspos,pos-cspos,tstrc,strnum));
           pos++; continue;
         }
         if (synt[pos] == 'b')
         {
           const pt dspos = pos;
-          while (synt[++pos] == 'b');
+          while (pos + 1 < synt.size() && synt[pos + 1] == 'b')
+            ++pos;
           if (level == 1 and code.substr(dspos, pos-dspos) == "default")
             default_start_pos = dspos;
         }
@@ -813,6 +885,10 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
           strs_this_statement++;
         pos++;
       }
+
+      if (level != 0)
+        break;
+
       int handicap = 0;
       size_t ci = 0;
       for (; ci < cases.size(); ci++)
@@ -825,6 +901,8 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
       if (handicap)
       {
         int delta = 0;
+        pt delta = 0;
+        delta += rep.length() - cases[i].len;
         code.insert(pos,"}");
         synt.insert(pos,"}");
 
@@ -876,7 +954,18 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
         // Defragment string IDs and generate case labels
         if (cases.size())
         {
-          const int lower_bound = cases[0].stri, upper_bound = cases[cases.size()-1].stri + cases[cases.size()-1].strc - 1;
+          const int lower_bound = cases[0].stri;
+          if (lower_bound < 0 || last_stri < 0 || last_strc < 0)
+            return -1;
+
+          const long long upper_bound_ll =
+              static_cast<long long>(last_stri) +
+              static_cast<long long>(last_strc) - 1;
+          if (upper_bound_ll < lower_bound ||
+              upper_bound_ll >= parsed_code->strc)
+            return -1;
+
+          const int upper_bound = static_cast<int>(upper_bound_ll);
           map<int,string> reorder;
           for (int i = lower_bound; i <= upper_bound; i++)
             reorder[i] = parsed_code->strs[i];
@@ -904,8 +993,11 @@ int parser_secondary(CompileState &state, ParsedCode *parsed_code) {
               for (int iii = 0; iii < cases[casenum].strc; iii++)
               {
                 int indx = cases[casenum].stri + iii;
-                parsed_code->strs[overwrite_at++] = reorder[indx];
-                reorder.erase(indx);
+                map<int,string>::iterator ri = reorder.find(indx);
+                if (ri == reorder.end())
+                  return -1;
+                parsed_code->strs[overwrite_at++] = ri->second;
+                reorder.erase(ri);
               }
             }
             if (i->first == -1) {
