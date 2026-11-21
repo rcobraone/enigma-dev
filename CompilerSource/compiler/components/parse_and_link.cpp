@@ -216,6 +216,12 @@ int lang_CPP::compile_parseAndLink(const GameData &game, CompileState &state) {
   for (const auto &timeline : game.timelines) {
     for (const auto &moment : timeline->moments()) {
       string curscrname = timeline.name;
+      if (lookup_id >= tlines.size()) {
+        user << "Internal error while linking timeline `"
+             << curscrname << "`, moment " << moment.step()
+             << ": missing parsed timeline script.\n" << flushl;
+        return E_ERROR_BUILD;
+      }     
       ParsedScript* curscript = tlines[lookup_id++]; //At this point, what we have is this:     for each script as curscript
       edbg << "Linking `" << curscrname << " moment: " <<moment.step() << "':\n";
       for (parsed_object::funcit it = curscript->scope.funcs.begin(); it != curscript->scope.funcs.end(); it++) //For each function called by each script
@@ -351,8 +357,15 @@ int lang_CPP::compile_parseAndLink(const GameData &game, CompileState &state) {
         }
 
         pr->instance_precreate_codes[instance.id()].object_name = instance.object_type();
+        const auto object_it = parsed_objects.find(instance.object_type());
+        if (object_it == parsed_objects.end() || !object_it->second) {
+          user << "Unknown object type `" << instance.object_type()
+               << "` for instance " << instance.id()
+               << " in room " << room.name << ".\n" << flushl;
+          return E_ERROR_BUILD;
+        }
         ParsedCode* icce = pr->instance_precreate_codes[instance.id()].code =
-            new ParsedCode(parsed_objects[instance.object_type()]);
+            new ParsedCode(object_it->second);
         icce->code = string("with (") + tostring(instance.id()) + ") {" + newcode + "\n/* */}";
         parser_main(icce, script_names);
       }
