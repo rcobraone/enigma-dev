@@ -30,5 +30,5 @@
 std::string tostring(int val);
 std::string tostringd(double val);
 std::string tostringv(void* val);
-int string_count(char c, char* str);
+int string_count(char c, const char* str);
 std::string arraybounds_as_str(std::string str);
