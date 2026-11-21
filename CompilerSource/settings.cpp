@@ -58,13 +58,23 @@ CompilerInfo compilerInfo;
 
 void map_ey(ey_data& key, std::map<std::string, std::string>& map) {
   for (const auto& v : key) {
-    map[toUpper(v.first)] = v.second->data().scalar().toString();
-    std::cout << toUpper(v.first) << "=\""; // The makefiles expect caps
-    std::cout << v.second->data().scalar().toString() << "\"" << std::endl;
+    if (v.second == nullptr)
+      continue;
+	  
+    const std::string name = toUpper(v.first);
+    const std::string value = v.second->data().scalar().toString();
+    map[name] = value;
+
+    std::cout << name << "=\"" << value << "\"" << std::endl;
   }
 }
 
 inline bool get_ey_field(ey_base* keyPtr, std::string field, std::string& str) {
+  if (keyPtr == nullptr) {
+    std::cerr << "Error: missing YAML field container" << std::endl;
+    return false;
+  }
+	
   ey_data& key = keyPtr->data();
   str = key.get(field);
   if (str.empty()) {
@@ -76,6 +86,11 @@ inline bool get_ey_field(ey_base* keyPtr, std::string field, std::string& str) {
 }
 
 bool load_compiler_ey(std::string fPath) {
+  if (fPath.empty()) {
+    std::cerr << "Error: compiler ey path is empty" << std::endl;
+    return false;
+  }
+
 
   bool success = true; // ugly hacks cause josh can't program 
 

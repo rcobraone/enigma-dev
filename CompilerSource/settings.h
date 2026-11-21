@@ -114,10 +114,14 @@ inline std::string escapeEnv(std::string str) {
       std::cerr << "Unmatched %s in " << str << std::endl;
       break;
     }
-    char* val = getenv(str.substr(i + 1, j - i - 1).c_str());
+    const std::string variable = str.substr(i + 1, j - i - 1);
+    const char* val = std::getenv(variable.c_str());
     std::string repl = val == nullptr ? "" : val;
     str.replace(i, j - i + 1, repl);
-    i = str.find_first_of('%');
+
+    // Do not rescan the replacement. This prevents recursive/self-referential
+    // environment variables from causing an infinite loop.
+    i = str.find_first_of('%', i + repl.length());
   }
   
   return str;
