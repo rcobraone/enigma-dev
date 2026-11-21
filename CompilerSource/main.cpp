@@ -80,6 +80,9 @@ DLLEXPORT void libEnableStopAPI() { build_enable_stop = true; }
 
 DLLEXPORT const char* libInit_path(EnigmaCallbacks* ecs, const char* enigma_path) 
 {
+  if (enigma_path == nullptr || *enigma_path == '\0')
+    enigma_path = ".";
+	
   enigma_root = enigma_path;
   
   if (ecs)
@@ -120,7 +123,11 @@ DLLEXPORT const char* libInit(EnigmaCallbacks* ecs)
 
 DLLEXPORT void libFree() {
   delete main_context;
+  main_context = nullptr;
+ 
   delete current_language;
+  current_language = nullptr;
+
   jdi::clean_up();
 }
 
@@ -142,6 +149,14 @@ DLLEXPORT syntax_error *definitionsModified(const char* wscode, const char* targ
 
 DLLEXPORT syntax_error *syntaxCheck(int script_count, const char* *script_names, const char* code)
 {
+  if (script_count < 0 ||
+      (script_count > 0 && script_names == nullptr) ||
+      code == nullptr) {
+    ide_passback_error.set(0, 0, -1,
+                           "Invalid script list passed to syntaxCheck");
+    return &ide_passback_error;
+  }
+	
   cout << "******** Compiling Initialized ********" << endl;
 
   //First, we make a space to put our scripts.
@@ -167,9 +182,17 @@ DLLEXPORT syntax_error *syntaxCheck(int script_count, const char* *script_names,
   {
     int line = 1, lp = 1;
     for (int i=0; i<ide_passback_error.absolute_index; i++,lp++) {
-      if (code[i] =='\r')
-        line++, lp = 0, i += code[i+1] == '\n';
-      else if (code[i] == '\n') line++, lp = 0;
+      if (code[i] == '\r') {
+        line++;
+        lp = 0;
+        if (i + 1 < ide_passback_error.absolute_index &&
+            code[i + 1] == '\n')
+          ++i;
+      }
+      else if (code[i] == '\n') {
+        line++;
+        lp = 0;
+      }
     }
 
     ide_passback_error.line = line;
