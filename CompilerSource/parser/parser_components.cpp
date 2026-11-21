@@ -30,6 +30,8 @@
 #include <string>
 #include <iostream>
 #include <cstdio>
+#include <limits>
+#include <stdexcept>
 using namespace std;
 #include "darray.h"
 
@@ -53,12 +55,16 @@ static jdi::definition_scope *current_scope;
 
 int dropscope()
 {
-  if (current_scope != main_context->get_global())
+  if (current_scope && current_scope != main_context->get_global() &&
+      current_scope->parent)
   current_scope = current_scope->parent;
   return 0;
 }
 int quickscope()
 {
+  if (!current_scope)
+    return 0;
+	
   jdi::definition_scope* ns = new jdi::definition_scope("{}",current_scope,jdi::DEF_NAMESPACE);
   current_scope->members["{}"+tostring(scope_braceid++)] = ns;
   current_scope = ns;
@@ -72,6 +78,9 @@ int initscope(string name)
 }
 int quicktype(unsigned flags, string name)
 {
+  if (!current_scope)
+    return 0;
+	
   current_scope->members[name] = new jdi::definition(name,current_scope,flags | jdi::DEF_TYPENAME);
   return 0;
 }
@@ -107,7 +116,7 @@ int parser_ready_input(string &code,string &synt,unsigned int &strc, varray<stri
     {
       //This is a word of some sort. Could be a keyword, a type, a macro... maybe just a varname
       const pt spos = pos;
-      while (is_letterd(code[++pos]));
+      while (++pos < code.length() && is_letterd(code[pos]));
       const string name = code.substr(spos,pos-spos);
       
       if (name == "div")
@@ -195,18 +204,18 @@ int parser_ready_input(string &code,string &synt,unsigned int &strc, varray<stri
     }
     else if (is_digit(code[pos]))
     {
-      if (code[pos] == '0' and code[pos + 1] == 'x')
+      if (code[pos] == '0' && pos + 1 < code.length() && code[pos + 1] == 'x')
         { pos++; goto HEXADECIMAL_LABEL; }
       if (bpos and synt[bpos-1] == '.')
         synt[bpos-1] = '0';
       else //We don't want to remove significant zeroes, only octal-inducing ones
-        while (code[pos] == '0')
+        while (pos < code.length() && code[pos] == '0')
           pos++;
-      if (is_digit(code[pos]))
+      if (pos < code.length() && is_digit(code[pos]))
         do {
           codo[bpos] = code[pos];
           synt[bpos++] = '0';
-        } while (is_digit(code[++pos]));
+        } while (++pos < code.length() && is_digit(code[pos]));
       else
        codo[bpos] = synt[bpos] = last_token = '0', bpos++;
       
@@ -218,13 +227,18 @@ int parser_ready_input(string &code,string &synt,unsigned int &strc, varray<stri
       const pt spos = pos;
       if (setting::use_cpp_escapes)
       {
-        while (code[++pos] != '"')
-          if (code[pos] == '\\') pos++;
+        while (++pos < code.length() && code[pos] != '"')
+          if (code[pos] == '\\' && pos + 1 < code.length())
+            ++pos;
+        if (pos >= code.length())
+          break;
         str = code.substr(spos,++pos-spos);
       }
       else
       {
-        while (code[++pos] != '"');
+        while (++pos < code.length() && code[pos] != '"');
+        if (pos >= code.length())
+          break;
         str = (code.substr(spos,++pos-spos));
       }
       string_in_code[strc++] = str;
@@ -238,13 +252,18 @@ int parser_ready_input(string &code,string &synt,unsigned int &strc, varray<stri
       const pt spos = pos;
       if (setting::use_cpp_escapes)
       {
-        while (code[++pos] != '\'')
-          if (code[pos] == '\\') pos++;
+        while (++pos < code.length() && code[pos] != '\'')
+          if (code[pos] == '\\' && pos + 1 < code.length())
+            ++pos;
+        if (pos >= code.length())
+          break;
         str = code.substr(spos,++pos-spos);
       }
       else
       {
-        while (code[++pos] != '\'');
+        while (++pos < code.length() && code[pos] != '\'');
+        if (pos >= code.length())
+          break;
         str = (code.substr(spos,++pos-spos));
       }
       string_in_code[strc++] = str;
@@ -254,18 +273,30 @@ int parser_ready_input(string &code,string &synt,unsigned int &strc, varray<stri
     }
     if (code[pos] == '/')
     {
-      if (code[++pos] == '/')
+      if (pos + 1 < code.length() && code[pos + 1] == '/')
       {
-        while (pos < code.length() and code[++pos] != '\n' and code[pos] != '\r');
+        while (++pos < code.length() && code[pos] != '\n' && code[pos] != '\r');
+        pos += 2;
+        while (pos < code.length() && code[pos] != '\n' && code[pos] != '\r')
+          ++pos;
         continue;
       }
-      else if (code[pos] == '*')
+      else if (pos + 1 < code.length() && code[pos + 1] == '*')
       {
-        while (pos < code.length() and (code[pos++] != '*' or code[pos] != '/'));
-        pos++; continue;
+        pos += 2;
+        while (pos + 1 < code.length() &&
+               !(code[pos] == '*' && code[pos + 1] == '/'))
+          ++pos;
+
+        if (pos + 1 < code.length())
+          pos += 2;+        else
+          pos = code.length();
+
+        continue;
       }
-      else if (code[pos] != '=')
+      else if (pos + 1 >= code.length() || code[pos + 1] != '=')
       {
+		++pos;
         codo[bpos] = synt[bpos] = last_token = '/', bpos++;
         codo += "(double)";
         synt += "(double)";
@@ -284,7 +315,7 @@ int parser_ready_input(string &code,string &synt,unsigned int &strc, varray<stri
       synt.append(1,' ');
       codo[bpos] = synt[bpos] = '0', bpos++;
       codo[bpos] = 'x', synt[bpos] = '0', bpos++;
-      while (is_hexdigit(code[++pos]))
+      while (++pos < code.length() && is_hexdigit(code[pos]))
         codo[bpos] = code[pos], synt[bpos] = '0', bpos++;
       continue;
     }
@@ -365,7 +396,10 @@ int parser_reinterpret(string &code,string &synt)
     else if (synt[pos] == 't')
     {
       pt rp = pos;
-      while (synt[++rp] == 't'); // find the right end
+      while (++rp < synt.length() && synt[rp] == 't'); // find the right end
+
+      if (rp >= synt.length())
+        break;
 
       if (synt[rp] == '(') { // constructor e.g, string("test")
         for (pt i = pos; i < rp; i++)
@@ -374,7 +408,7 @@ int parser_reinterpret(string &code,string &synt)
       } else if (synt[pos-1] == '(') { // traditional cast e.g, (string)"test"
         const pt sp = pos-1;
         pos = rp;
-        if (synt[pos] == ')')
+        if (pos < synt.length() && synt[pos] == ')')
           for (pt i = sp; i <= pos; i++)
             synt[i] = 'c';
       }
@@ -383,11 +417,16 @@ int parser_reinterpret(string &code,string &synt)
     else if(synt[pos] == '<' and synt[pos-1] == 't')
     {
       synt[pos++] = 't';
-      for (int pc = 1; pc > 0; synt[pos++] = 't')
+      for (int pc = 1; pc > 0 && pos < synt.length(); synt[pos++] = 't')
+      {
         if (synt[pos] == '>') pc--;
         else if (synt[pos] == '<') pc++;
+      if (pos >= synt.length())
+        break;
+      }        
     }
-    else if (pos > 1 and synt[pos] == ':' and synt[pos-1] == ':')
+    else if (pos > 1 && pos + 1 < synt.length() &&
+             synt[pos] == ':' && synt[pos-1] == ':')
     {
       char t = synt[pos+1];
       synt[pos-1] = synt[pos] = t;
@@ -403,28 +442,50 @@ int parser_reinterpret(string &code,string &synt)
     else if (synt[pos] == 'V')
     {
       const pt spos = pos;
-      while ((synt[pos] = 'n', synt[++pos] == 'V'));
-      jdi::definition_function *d = (jdi::definition_function*)current_language->look_up(code.substr(spos,pos-spos));
+      while (pos < synt.length())
+      {
+        synt[pos] = 'n';
+        if (++pos >= synt.length() || synt[pos] != 'V')
+          break;
+      }
+      jdi::definition_function *d =
+        (jdi::definition_function*)current_language->look_up(
+          code.substr(spos,pos-spos));
       const pt epos = pos;
+      if (!d)
+      {
+        pos = epos;
+        continue;
+      }     
       int en = current_language->function_variadic_after(d);
       if (en == -1) continue;
       cout << "AND EN = " << en  << endl;
-      ++pos; for (unsigned lvl = 1; en and lvl; pos++)
+      unsigned lvl = 1;
+      for (; en && lvl && pos < synt.length(); ++pos)
       {
         if (synt[pos] == '(') { lvl++; continue; }
         if (synt[pos] == ')') { lvl--; continue; }
         if (lvl == 1 and synt[pos] == ',') en--;
       }
+      if (lvl != 0)
+        continue;
+      if (pos >= synt.length())
+        break;
+
       cout << "CHECK POINT" << endl;
       if (!en) {
         code.insert(pos,"(enigma::varargs(),");
         synt.insert(pos,"(nnnnnnnnnnnnnnn(),");
         pos += 19;
-        for (unsigned lvl = 1; lvl; pos++)
+        for (unsigned lvl = 1; lvl && pos < synt.length(); ++pos)
         {
           if (synt[pos] == '(') { lvl++; continue; }
           if (synt[pos] == ')') { lvl--; continue; }
         }
+
+        if (pos >= synt.length())
+          break;
+        
         pos--;
         code.insert(pos,")");
         synt.insert(pos,")");
@@ -476,10 +537,18 @@ int parser_reinterpret(string &code,string &synt)
 //Add semicolons
 void parser_add_semicolons(string &code,string &synt)
 {
+  if (code.size() != synt.size())
+    return;
+	
   //Allocate enough memory to hold all the semicolons we'd ever need
-  char *codebuf = new char[code.length()*2+1];
-  char *syntbuf = new char[code.length()*2+1];
-  int bufpos = 0;
+  const pt input_length = code.length();
+  if (input_length > (numeric_limits<pt>::max() - 1) / 2)
+    throw length_error("ENIGMA parser input is too large");
+
+  const pt buffer_length = input_length * 2 + 1;
+  char *codebuf = new char[buffer_length];
+  char *syntbuf = new char[buffer_length];
+  pt bufpos = 0;
   
   //Add the semicolons in obvious places
   stackif *sy_semi = new stackif(';');
@@ -527,10 +596,10 @@ void parser_add_semicolons(string &code,string &synt)
       }
       if (synt[pos]==':')
       {
-        if (synt[pos+1] == '=')
+        if (pos + 1 < synt.length() && synt[pos+1] == '=')
           continue;
         // TODO: This segment will potentially hurt goto labels
-        if (*sy_semi != ';' and *sy_semi != ':')
+        if (bufpos > 0 && *sy_semi != ';' && *sy_semi != ':')
         {
           codebuf[bufpos-1] = *sy_semi;
           syntbuf[bufpos-1] = *sy_semi;
@@ -556,8 +625,11 @@ void parser_add_semicolons(string &code,string &synt)
         syntbuf[bufpos++] = synt[pos];
         sy_semi=sy_semi->popif('s');
       }
-      if((pos>2 and synt[pos] == '+' and synt[pos-1] == '+' and synt[pos-2] == 'n' and needs_semi_sepd('n',synt[pos+1]))
-      or (pos>2 and synt[pos] == '-' and synt[pos-1] == '-' and synt[pos-2] == 'n' and needs_semi_sepd('n',synt[pos+1])))
+      if(pos + 1 < code.length() &&
+         ((pos > 2 && synt[pos] == '+' && synt[pos-1] == '+' &&
+           synt[pos-2] == 'n' && needs_semi_sepd('n',synt[pos+1])) ||
+          (pos > 2 && synt[pos] == '-' && synt[pos-1] == '-' &&
+           synt[pos-2] == 'n' && needs_semi_sepd('n',synt[pos+1]))))
       {
         codebuf[bufpos  ] = *sy_semi;
         syntbuf[bufpos++] = *sy_semi;
@@ -568,12 +640,15 @@ void parser_add_semicolons(string &code,string &synt)
     {
       string ts; ts.reserve(10);
       ts += code[pos];
-      while (synt[++pos] == 's')
+      while (++pos < synt.length() && synt[pos] == 's')
       {
         codebuf[bufpos] = code[pos];
         syntbuf[bufpos++] = 's';
         ts += code[pos];
       }
+
+      if (pos >= synt.length())
+        break;
 
       if (synt[pos] != ' ')
         pos--;
@@ -589,6 +664,9 @@ void parser_add_semicolons(string &code,string &synt)
     }
     else if (synt[pos] == 'f')
     {
+      if (pos + 3 >= synt.length())
+        continue;
+		
       codebuf[bufpos] = 'o';
       syntbuf[bufpos] = 'f';
       codebuf[++bufpos] = 'r';
@@ -596,6 +674,12 @@ void parser_add_semicolons(string &code,string &synt)
 
       pos+=3;
       if (synt[pos] != ' ')
+
+      if (pos + 3 >= synt.length())
+        break;
+
+      pos += 3;
+      if (pos < synt.length() && synt[pos] != ' ')
         pos--; //If there's a (, you'll be at it next iteration
 
       codebuf[bufpos] = syntbuf[bufpos] = '(', bufpos++;
@@ -607,8 +691,15 @@ void parser_add_semicolons(string &code,string &synt)
   }
 
   //Dump the semicolon stack at the end.
-  do codebuf[bufpos] = syntbuf[bufpos] = *sy_semi, bufpos++;
-  while (sy_semi->prev and (sy_semi = sy_semi->prev));
+  while (sy_semi)
+  {
+    codebuf[bufpos] = syntbuf[bufpos] = *sy_semi;
+    ++bufpos;
+
+    stackif *prev = sy_semi->prev;
+    delete sy_semi;
+    sy_semi = prev;
+  }
 
   code = string(codebuf,bufpos);
   synt = string(syntbuf,bufpos);
@@ -627,10 +718,12 @@ void parser_add_semicolons(string &code,string &synt)
     if (synt[pos] == 'r') //For every 'do'
     {
       //Make sure we're at do
-      if ((code[pos] != 'd'  or  code[pos+1] != 'o')
-      or !(code[pos+2] == ' ' or synt[pos+2] != 'r'))
+      if (pos + 2 >= len ||
+          (code[pos] != 'd' || code[pos+1] != 'o') ||
+          !(code[pos+2] == ' ' || synt[pos+2] != 'r'))
       {
-        while (synt[pos] == 'r' and code[pos] != ' ') pos++;
+        while (pos < len && synt[pos] == 'r' && code[pos] != ' ')
+          pos++;
         continue;
       }
 
@@ -647,7 +740,8 @@ void parser_add_semicolons(string &code,string &synt)
         else if (synt[pos]=='s') //if we're at a statement
         {
           //if the statement is while or until
-          if (synt[pos+1]=='s' and ((code[pos]=='w' and code[pos+1]=='h') or code[pos]=='u'))
+          if (pos + 1 < len && synt[pos+1]=='s' &&
+              ((code[pos]=='w' && code[pos+1]=='h') || code[pos]=='u'))
           {
             if (dos == 0) //If this until is our closing until
             {
@@ -663,7 +757,8 @@ void parser_add_semicolons(string &code,string &synt)
                 else if (synt[pos]==')') ps--;
                 pos++;
               }
-
+              if (pos >= len)
+                break;
               if (synt[pos] != ';')
               {
                 code.insert(pos,";");
@@ -684,13 +779,18 @@ void parser_add_semicolons(string &code,string &synt)
         }
         else if (synt[pos]=='r')
         {
-          if (code[pos]=='d' and code[pos+1]=='o' and (code[pos+2] == ' ' or synt[pos+2] != 'r'))
+          if (pos + 2 < len &&
+              code[pos] == 'd' && code[pos+1] == 'o' &&
+              (code[pos+2] == ' ' || synt[pos+2] != 'r'))
           {
             dos++;
             pos+=2;
-            if (code[pos] != ' ') pos--;
+            if (pos < len && code[pos] != ' ')
+              pos--;
           }
-          else while (synt[pos] == 'r' and code[pos] != ' ') pos++;
+          else
+            while (pos < len && synt[pos] == 'r' && code[pos] != ' ')
+              pos++;
         }
         else if (synt[pos]=='{')
         {
@@ -715,8 +815,9 @@ void parser_add_semicolons(string &code,string &synt)
   
   //now we'll do ONE MORE pass, to take care of for(())
   len = code.length();
-  for (pt pos = 1; pos<len; pos++)
-  if (synt[pos-1] == 'f' and synt[pos] == '(' and synt[pos+1]=='(')
+  for (pt pos = 1; pos + 1 < len; pos++)
+  if (pos + 1 < len &&
+      synt[pos-1] == 'f' && synt[pos] == '(' && synt[pos+1] == '(')
   {
     const pt sp = pos;
 
@@ -728,7 +829,7 @@ void parser_add_semicolons(string &code,string &synt)
       else if (synt[pos]==')') pl--;
       pos++;
     }
-    if (pl==0 and code[pos]==')')
+    if (pl == 0 && pos < len && code[pos]==')')
     {
       code.erase(pos,1);
       synt.erase(pos,1);
@@ -816,9 +917,11 @@ static inline string string_settings_escape(string n)
         break;
       case '\r': // Handle odd cases
           n[pos] = '\\';
-          if (n[++pos] == '\n')
+          ++pos;
+          if (pos < n.length() && n[pos] == '\n')
             n[pos] = 'n';
-          else n.insert(pos,1,'n');
+          else
+            n.insert(pos,1,'n');
         break;
       case '"':
           n.insert(pos++,1,'\\');
@@ -830,11 +933,6 @@ static inline string string_settings_escape(string n)
 
 void print_to_file(string code,string synt,const unsigned int strc, const varray<string> &string_in_code,int indentmin_b4,ofstream &of)
 {
-  //FILE* of = fopen("/media/HP_PAVILION/Documents and Settings/HP_Owner/Desktop/parseout.txt","w+b");
-  FILE* of_ = fopen("/home/josh/Desktop/parseout.txt","ab");
-  if (of_) { fprintf(of_,"%s\n%s\n\n\n",code.c_str(), synt.c_str()); fclose(of_); }
-  //if (of == NULL) return;
-
   const int indentmin = indentmin_b4 + 1;
   int indc = 0,tind = 0,pars = 0;
   unsigned str_ind = 0;
@@ -853,7 +951,10 @@ void print_to_file(string code,string synt,const unsigned int strc, const varray
         break;
       case '}':
           tind = 0;
-          indc -= 2;
+          if (indc >= 2)
+            indc -= 2;
+          else
+            indc = 0;
           of.write(indent_chars,indentmin+indc);
           of << '}';
           of.write(indent_chars,indentmin+indc);
@@ -880,7 +981,7 @@ void print_to_file(string code,string synt,const unsigned int strc, const varray
           if (pars == 1)
           {
             pars = 0;
-            if (synt[pos+1] != '{' and synt[pos+1] != ';')
+            if (pos + 1 < len && synt[pos+1] != '{' && synt[pos+1] != ';')
             {
               tind+=2;
               of.write(indent_chars,indentmin+indc+tind);
@@ -889,10 +990,14 @@ void print_to_file(string code,string synt,const unsigned int strc, const varray
         break;
       case '"': case '\'':
           if (pars) pars--;
-            if (str_ind >= strc) cout << "What the string literal.\n";
+            if (str_ind >= strc)
+            {
+              of << code[pos];
+              break;
+            }
             of << string_settings_escape(string_in_code[str_ind]).c_str();
             str_ind++;
-            if (synt[pos+1] == '+' and synt[pos+2] == '"')
+            if (pos + 2 < len && synt[pos+1] == '+' && synt[pos+2] == '"')
               synt[pos+1] = code[pos+1] = ' ';
         break;
       case 's':
@@ -903,7 +1008,7 @@ void print_to_file(string code,string synt,const unsigned int strc, const varray
 
       default:
           of << code[pos];
-          if (likesaspace(synt[pos],synt[pos+1]))
+          if (pos + 1 < len && likesaspace(synt[pos],synt[pos+1]))
             of << ' ';
         break;
     }
@@ -915,15 +1020,22 @@ void print_to_file(string code,string synt,const unsigned int strc, const varray
 
 int parser_fix_templates(string &code,pt pos,pt spos,string *synt)
 {
-  cout << "qass: " << pos << " <" << ((synt && code.length()) == (synt && synt->length()) ? "equivalent" : "UNEQUAL") << "> [" << (pos > code.length()) << "]";
+  if (synt && code.length() != synt->length())
+    return 0;
+	
+  cout << "qass: " << pos << " <" << (synt && code.length() == synt->length() ? "equivalent" : "UNEQUAL") << "> [" << (pos > code.length()) << "]";
+  if (pos == 0 || pos > code.length())
+    return 0;
+  
   pt epos = pos;
   int a2i = 0;
   
-  if (code[--epos] == '>')
+  --epos;
+  if (code[epos] == '>')
   {
     --epos;
     int ac = 0; bool ga = false; // argument count, given argument = whether or not anything other than whitespace was specified for the arg type
-    for (int tbc = 1; tbc > 0; epos--) // track triangle bracket count 
+    for (int tbc = 1; tbc > 0 && epos > 0; epos--) // track triangle bracket count 
     {
       if (code[epos] == '<')
         { tbc--; continue; }
@@ -932,14 +1044,22 @@ int parser_fix_templates(string &code,pt pos,pt spos,string *synt)
       ga |=  (code[epos] != '<'  and code[epos] != '>' and !is_useless(code[epos]));
       ga &=  (code[epos] != ',');
     }
+    if (epos == 0 && code[epos] != '<')
+      return 0;
+
+    if (tbc != 0)
+      return 0;
+
     a2i = ac + ga;
   }
   
+  if (spos >= code.length() || spos > epos)
+    return 0;
   pt sp2 = spos;
-  while (code[sp2] != '<' and sp2 < epos)
+  while (sp2 < epos && sp2 < code.length() && code[sp2] != '<')
     if (code[sp2++] == ' ') spos = sp2;
   
-  cout << " <" << ((synt && code.length()) == (synt && synt->length()) ? "equivalent" : "UNEQUAL") << "> [" << (pos > code.length()) << "]";
+  cout << " <" << (synt && code.length() == synt->length() ? "equivalent" : "UNEQUAL") << "> [" << (pos > code.length()) << "]";
   cout << "ass: " << spos << ", " << epos << ": " << code.length() << endl;
   string ptname = code.substr(spos,epos-spos+1); // Isolate the potential template's name
   jdi::definition* a = current_language->look_up(ptname);
@@ -948,16 +1068,21 @@ int parser_fix_templates(string &code,pt pos,pt spos,string *synt)
   if (a->flags & jdi::DEF_TEMPLATE)
   {
     jdi::definition_template *tmp = (jdi::definition_template*)a;
-    int tmc = tmp->params.size() - 1;
+    if (tmp->params.empty())
+      return 0;
+
+    int tmc = static_cast<int>(tmp->params.size()) - 1;
     for (int i = tmc; i >= 0; i--)
       if (tmp->params[i]->default_assignment) tmc = i;
     a2i = tmc - a2i;
+    if (a2i < 0)
+      return 0;    
     string iseg;
     for (int i = 0; i < a2i;)
       iseg += (++i < a2i) ? "variant," : "variant";
-    if (code[pos-1] == '>')
+    if (pos >= 1 && code[pos-1] == '>')
     {
-      if (code[pos-2] == ',' or code[pos-2] == '<')
+      if (pos >= 2 && (code[pos-2] == ',' || code[pos-2] == '<'))
       {
         if (iseg.length())
         {
@@ -967,8 +1092,8 @@ int parser_fix_templates(string &code,pt pos,pt spos,string *synt)
         }
         else if (code[pos-2] == ',')
         {
-          code.erase(pos-2,1);
-          synt->erase(pos-2,1);
+          if (synt)
+            synt->erase(pos-2,1);
           return -1;
         }
       }
