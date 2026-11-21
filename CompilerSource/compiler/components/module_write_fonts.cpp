@@ -20,6 +20,7 @@
 #include <iostream>
 #include <fstream>
 #include <list>
+#include <limits>
 
 using namespace std;
 
@@ -137,7 +138,10 @@ int lang_CPP::module_write_fonts(const GameData &game, FILE *gameModule)
         w > h ? h <<= 1 : w <<= 1,
         rectplane = expand(rectplane, w, h);
         printf("Expanded to %d by %d\n", w, h);
-        if (!w or !h) return -1;
+        if (!w or !h) {
+          delete[] boxes;
+          return -1;
+        }
       }
     }
 
