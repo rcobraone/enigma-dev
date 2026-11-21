@@ -15,6 +15,8 @@
 *** with this code. If not, see <http://www.gnu.org/licenses/>
 **/
 
+#include <limits>
+
 #ifndef ENIGMA_INSTANCE_CREATE_H
 #define ENIGMA_INSTANCE_CREATE_H
 
@@ -79,8 +81,11 @@ namespace enigma
 
   object_basic* instance_create_id(int x,int y,int object,int idn)
   { //This is for use by the system only. Please leave be.
-  if (maxid <= idn)
-    maxid = idn + 1;
+    if (idn < 0 || idn == std::numeric_limits<int>::max())
+      return NULL;
+
+    if (maxid <= idn)
+      maxid = idn + 1;
     
     object_basic* ob;
     switch (object)
