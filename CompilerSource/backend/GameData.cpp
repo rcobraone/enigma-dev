@@ -14,7 +14,8 @@
 #include <map>
 #include <string>
 #include <iostream>
-
+#include <climits>
+#include <limits>
 #include <zlib.h>
 
 using std::cout;
@@ -30,10 +31,25 @@ static inline uint32_t javaColor(int c) {
 
 static unsigned char* zlib_compress(unsigned char* inbuffer, int &actualsize)
 {
-  uLongf outsize=(int)(actualsize*1.1)+12;
-  Bytef* outbytef=new Bytef[outsize];
+  if (!inbuffer || actualsize < 0)
+    return nullptr;
 
-  compress(outbytef,&outsize,(Bytef*)inbuffer,actualsize);
+  const uLong source_size = static_cast<uLong>(actualsize);
+  const uLongf outsize_bound = compressBound(source_size);
+  Bytef* outbytef = new Bytef[outsize_bound];
+  uLongf outsize = outsize_bound;
+
+  const int result =
+      compress(outbytef, &outsize, inbuffer, source_size);
+  if (result != Z_OK) {
+    delete[] outbytef;
+    return nullptr;
+  }
+
+  if (outsize > static_cast<uLongf>(INT_MAX)) {
+    delete[] outbytef;
+    return nullptr;
+  }
 
   actualsize = outsize;
 
@@ -47,13 +63,42 @@ BinaryData loadBinaryData(const std::string &filePath, int &errorc) {
     return BinaryData();
   }
 
-  fseek(afile,0,SEEK_END);
-  const size_t flen = ftell(afile);
+  if (fseek(afile, 0, SEEK_END) != 0) {
+    fclose(afile);
+    errorc = -1;
+    return BinaryData();
+  }
+
+  const long file_size = ftell(afile);
+  if (file_size < 0) {
+    fclose(afile);
+    errorc = -1;
+    return BinaryData();
+  }
+
+  const size_t flen = static_cast<size_t>(file_size);
+  if (flen == 0) {
+    fclose(afile);
+    errorc = 0;
+    return BinaryData();
+  }
+  
   unsigned char *fdata = new unsigned char[flen];
-  fseek(afile,0,SEEK_SET);
-  if (fread(fdata,1,flen,afile) != flen)
-    puts("WARNING: Resource stream cut short while loading data");
+  if (fseek(afile, 0, SEEK_SET) != 0) {
+    delete[] fdata;
+    fclose(afile);
+    errorc = -1;
+    return BinaryData();
+  }
+
+  const size_t read_size = fread(fdata, 1, flen, afile);
   fclose(afile);
+
+  if (read_size != flen) {
+    delete[] fdata;
+    errorc = -1;
+    return BinaryData();
+  }
 
   errorc = 0;
   return BinaryData(fdata, fdata + flen);
@@ -85,9 +130,14 @@ ImageData loadImageData(const std::string &filePath, int &errorc) {
   int dataSize = pngwidth*pngheight*4;
   const unsigned char* data = zlib_compress(image, dataSize);
   delete[] image;
+  
+  if (!data) {
+    errorc = -1;
+    return ImageData(0, 0, 0, 0);
+  }
 
   errorc = 0;
-  return ImageData(pngwidth, pngheight, data, dataSize);;
+  return ImageData(pngwidth, pngheight, data, dataSize);
 }
 
 struct ESLookup {
@@ -95,6 +145,8 @@ struct ESLookup {
     std::string kind;
     std::map<int, std::string> names;
     template<class T> Lookup(T* d, int sz, std::string &&k): kind(k) {
+      if (sz <= 0 || !d)
+        return;		
       for (int i = 0; i < sz; ++i) names[d[i].id] = d[i].name;
     }
     std::string operator[](int x) const {
@@ -137,6 +189,11 @@ SpriteData::SpriteData(const deprecated::JavaStruct::Sprite &sprite):
   data.set_bbox_right(sprite.bbRight);
   data.set_bbox_top(sprite.bbTop);
   data.set_bbox_bottom(sprite.bbBottom);
+
+  if (sprite.subImageCount < 0)
+    return;
+  if (sprite.subImageCount > 0 && !sprite.subImages)
+    return;
 
   for (int i = 0; i < sprite.subImageCount; ++i)
     image_data.emplace_back(sprite.subImages[i].image);
@@ -195,6 +252,11 @@ FontData::FontData(const deprecated::JavaStruct::Font &font):
   data.set_bold(font.bold);
   data.set_italic(font.italic);
 
+  if (font.glyphRangeCount < 0)
+    return;
+  if (font.glyphRangeCount > 0 && !font.glyphRanges)
+    return;
+
   for (int i = 0; i < font.glyphRangeCount; ++i) {
     normalized_ranges.emplace_back(font.glyphRanges[i]);
     for (const auto &glyph : normalized_ranges.back().glyphs) {
@@ -205,16 +267,29 @@ FontData::FontData(const deprecated::JavaStruct::Font &font):
 
 FontData::NormalizedRange::NormalizedRange(const deprecated::JavaStruct::GlyphRange &range):
     min(range.rangeMin), max(range.rangeMax) {
-  const int gcount = range.rangeMax - range.rangeMin + 1;
+  if (range.rangeMax < range.rangeMin || !range.glyphs)
+    return;
+
+  const size_t gcount =
+      static_cast<size_t>(range.rangeMax) -
+      static_cast<size_t>(range.rangeMin) + 1;
+
   glyphs.reserve(gcount);
-  for (int i = 0; i < gcount; ++i) {
+  for (size_t i = 0; i < gcount; ++i) {
     glyphs.emplace_back(range.glyphs[i]);
   }
 }
 
 FontData::GlyphData::GlyphData(const deprecated::JavaStruct::Glyph &glyph):
     ImageData(glyph.width, glyph.height, glyph.data,
-              glyph.width * glyph.height) { // Glyph images are alpha-only.
+              (glyph.width > 0 &&
+               glyph.height > 0 &&
+               static_cast<size_t>(glyph.width) <=
+                 std::numeric_limits<size_t>::max() /
+                 static_cast<size_t>(glyph.height))
+                ? static_cast<size_t>(glyph.width) *
+                  static_cast<size_t>(glyph.height)
+                : 0) { // Glyph images are alpha-only
   metrics.set_origin(glyph.origin);
   metrics.set_baseline(glyph.baseline);
   metrics.set_advance(glyph.advance);
@@ -235,6 +310,11 @@ PathData::PathData(const deprecated::JavaStruct::Path &path):
 	// Discarded: backgroundRoomId;
   data.set_hsnap(path.snapX);
   data.set_vsnap(path.snapY);
+
+  if (path.pointCount < 0)
+    return;
+  if (path.pointCount > 0 && !path.points)
+    return;
 
   for (int i = 0; i < path.pointCount; ++i) {
     auto *p = data.add_points();
@@ -279,6 +359,11 @@ TimelineData::TimelineData(const deprecated::JavaStruct::Timeline &timeline):
   name(timeline.name) {
   data.set_id(timeline.id);
 
+  if (timeline.momentCount < 0)
+    return;
+  if (timeline.momentCount > 0 && !timeline.moments)
+    return;
+
   for (int i = 0; i < timeline.momentCount; ++i) {
     auto *moment = data.add_moments();
     moment->set_step(timeline.moments[i].stepNo);
@@ -306,12 +391,24 @@ ObjectData::ObjectData(const deprecated::JavaStruct::GmObject &object, const ESL
   if (object.maskId >= 0)
     data.set_mask_name(lookup.sprite[object.maskId]);
 
+  if (object.mainEventCount < 0)
+    return;
+  if (object.mainEventCount > 0 && !object.mainEvents)
+    return;
+
   for (int i = 0; i < object.mainEventCount; ++i) {
+    if (object.mainEvents[i].eventCount < 0)
+      return;
+    if (object.mainEvents[i].eventCount > 0 &&
+        !object.mainEvents[i].events)
+      return;
+	  
     for (int j = 0; j < object.mainEvents[i].eventCount; ++j) {
       auto *event = data.add_legacy_events();
       event->set_type(object.mainEvents[i].id);
       event->set_number(object.mainEvents[i].events[j].id);
-      event->set_code(object.mainEvents[i].events[j].code);
+      if (object.mainEvents[i].events[j].code)
+        event->set_code(object.mainEvents[i].events[j].code);
     }
   }
 }
@@ -341,6 +438,11 @@ RoomData::RoomData(const deprecated::JavaStruct::Room &room, const ESLookup &loo
 
   data.set_enable_views(room.enableViews);
 
+  if (room.backgroundDefCount < 0)
+    return;
+  if (room.backgroundDefCount > 0 && !room.backgroundDefs)
+    return;
+
   for (int i = 0; i < room.backgroundDefCount; ++i) {
     auto *background = data.add_backgrounds();
     const auto &es_background = room.backgroundDefs[i];
@@ -357,6 +459,11 @@ RoomData::RoomData(const deprecated::JavaStruct::Room &room, const ESLookup &loo
     if (es_background.backgroundId >= 0)
       background->set_background_name(lookup.background[es_background.backgroundId]);
   }
+
+  if (room.viewCount < 0)
+    return;
+  if (room.viewCount > 0 && !room.views)
+    return;
 
   for (int i = 0; i < room.viewCount; ++i) {
     auto *view = data.add_views();
@@ -379,6 +486,11 @@ RoomData::RoomData(const deprecated::JavaStruct::Room &room, const ESLookup &loo
       view->set_object_following(lookup.object[es_view.objectId]);
   }
 
+  if (room.instanceCount < 0)
+    return;
+  if (room.instanceCount > 0 && !room.instances)
+    return;
+
   for (int i = 0; i < room.instanceCount; ++i) {
     auto *instance = data.add_instances();
     const auto &es_instance = room.instances[i];
@@ -393,6 +505,11 @@ RoomData::RoomData(const deprecated::JavaStruct::Room &room, const ESLookup &loo
     if (es_instance.preCreationCode)
       instance->set_initialization_code(es_instance.preCreationCode);
   }
+  
+  if (room.tileCount < 0)
+    return;
+  if (room.tileCount > 0 && !room.tiles)
+    return;
 
   for (int i = 0; i < room.tileCount; ++i) {
     auto *tile = data.add_tiles();
@@ -412,12 +529,22 @@ RoomData::RoomData(const deprecated::JavaStruct::Room &room, const ESLookup &loo
 }
 
 ImageData::ImageData(const Image &img):
-    width(img.width), height(img.height),
-    pixels(img.data, img.data + img.dataSize){}
+    width(img.width), height(img.height) {
+  if (img.dataSize > 0 && img.data)
+    pixels.assign(img.data, img.data + img.dataSize);
+}
 ImageData::ImageData(int w, int h, const uint8_t *data, size_t size):
-    width(w), height(h), pixels(data, data + size) {}
+    width(w), height(h) {
+  if (data && size)
+    pixels.assign(data, data + size);
+}
 
 namespace {
+
+//Helper validArray
+static bool validArray(const void *data, int count) {
+  return count >= 0 && (count == 0 || data != nullptr);
+}
 
 void ImportSettings(const deprecated::JavaStruct::GameSettings &settings,
                     buffers::resources::Settings& set) {
@@ -544,9 +671,26 @@ void LegacyEventsToEGM(GameData &game, const EventData* evdata) {
 
 }  // namespace
 
+
+
 GameData::GameData(deprecated::JavaStruct::EnigmaStruct *es,
                    const EventData* events):
-    filename(es->filename ? es->filename : "") {
+    filename(es ? (es->filename ? es->filename : "") : "") {
+  if (!es)
+    return;
+
+  if (!validArray(es->sprites, es->spriteCount) ||
+      !validArray(es->sounds, es->soundCount) ||
+      !validArray(es->backgrounds, es->backgroundCount) ||
+      !validArray(es->fonts, es->fontCount) ||
+      !validArray(es->paths, es->pathCount) ||
+      !validArray(es->scripts, es->scriptCount) ||
+      !validArray(es->shaders, es->shaderCount) ||
+      !validArray(es->timelines, es->timelineCount) ||
+      !validArray(es->gmObjects, es->gmObjectCount) ||
+      !validArray(es->rooms, es->roomCount))
+    return;
+
   cout << "Translating EnigmaStruct" << endl;
   cout << "- Indexing names" << endl;
   ESLookup lookup(es);
@@ -583,12 +727,27 @@ GameData::GameData(deprecated::JavaStruct::EnigmaStruct *es,
     rooms.emplace_back(es->rooms[i], lookup);
 
   cout << "- Transferring " << es->constantCount <<  " constants" << endl;
+  if (es->constantCount > 0 && !es->constants)
+    return;
+  if (es->constantCount < 0)
+    return;
+
   for (int i = 0; i < es->constantCount; ++i)
     constants.emplace_back(es->constants[i].name, es->constants[i].value);
   cout << "- Transferring " << es->extensionCount <<  " extensions" << endl;
+  if (es->extensionCount < 0)
+    return;
+  if (es->extensionCount > 0 && !es->extensions)
+    return;
+  if (es->packageCount < 0)
+    return;
+  if (es->packageCount > 0 && !es->packages)
+    return;
+  
   for (int i = 0; i < es->extensionCount; ++i)
     extensions.emplace_back(es->extensions[i].name, es->extensions[i].path);
   cout << "- Transferring " << es->packageCount <<  " packages" << endl;
+  
   for (int i = 0; i < es->packageCount; ++i)
     packages.push_back(es->packages[i]);
 
