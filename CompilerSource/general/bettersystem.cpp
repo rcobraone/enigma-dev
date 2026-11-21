@@ -73,17 +73,29 @@ inline string cutout_block(const char* source, pt& pos, bool& qed)
 
   if (source[pos] == '"' and (qed = true))
   { DoubleQuoteInBlock:
-    while (source[++pos] and source[pos] != '"')
-      if (source[pos] == '\\') pos++;
-    ret += string(source + cut_beginning_string(spos), cut_termining_string(pos-spos));
-    pos++;
+    while (source[++pos])
+    {
+      if (source[pos] == '"')
+        break;
+      if (source[pos] == '\\' && source[pos + 1])
+        ++pos;
+    }
+   ret += string(source + cut_beginning_string(spos), cut_termining_string(pos-spos));
+    if (source[pos])
+      ++pos;
   }
   else if (source[pos] == '\'' and (qed = true))
   { SingleQuoteInBlock:
-    while (source[++pos] and source[pos] != '\'')
-      if (source[pos] == '\\') pos++;
+    while (source[++pos])
+    {
+      if (source[pos] == '\'')
+        break;
+      if (source[pos] == '\\' && source[pos + 1])
+        ++pos;
+    }
     ret += string(source + cut_beginning_string(spos), cut_termining_string(pos-spos));
-    pos++;
+    if (source[pos])
+      ++pos;
   }
   else
   {
@@ -138,6 +150,9 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
       {
         int redirchr = 0;
         string pcur = cutout_block(fcmd, pos, qued);
+        
+        if (pcur.empty())
+          continue;
 
         if (!redirchr and !qued and
         (  ((pcur[0] == '>' or pcur.substr(0,2) == "1>") and (redirchr = 1))
@@ -231,7 +246,11 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
       DWORD creationFlags = CREATE_DEFAULT_ERROR_MODE;
       if (build_enable_stop)
         creationFlags |= CREATE_NEW_PROCESS_GROUP;
-      if (CreateProcess(NULL,(CHAR*)parameters.c_str(),NULL,&inheritibility,TRUE,creationFlags,Cenviron_use,NULL,&StartupInfo,&ProcessInformation))
+      string mutable_parameters = parameters;
+      if (CreateProcessA(NULL, mutable_parameters.empty() ? NULL :
+                         &mutable_parameters[0],
+                         NULL,&inheritibility,TRUE,creationFlags,
+                         Cenviron_use,NULL,&StartupInfo,&ProcessInformation))
       {
         DWORD timeout = build_enable_stop ? 10 : INFINITE;
         while (WaitForSingleObject(ProcessInformation.hProcess, timeout) == WAIT_TIMEOUT) {
@@ -245,11 +264,19 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
         CloseHandle(ProcessInformation.hProcess);
         CloseHandle(ProcessInformation.hThread);
         CloseHandle(handleout);
-        if (handleerr != handleout) CloseHandle(handleerr);
+        if (handleout != INVALID_HANDLE_VALUE)
+          CloseHandle(handleout);
+        if (handleerr != INVALID_HANDLE_VALUE &&
+            handleerr != handleout)
+          CloseHandle(handleerr);
       }
       else {
         CloseHandle(handleout);
-        if (handleerr != handleout) CloseHandle(handleerr);
+        if (handleout != INVALID_HANDLE_VALUE)
+          CloseHandle(handleout);
+        if (handleerr != INVALID_HANDLE_VALUE &&
+            handleerr != handleout)
+          CloseHandle(handleerr);
         cerr << "ENIGMA: Failed to create process `" << ename << "`: error " << (int)GetLastError() << ".\nCommand line: `" << parameters.c_str() << "`";
         return -1;
       }
@@ -261,7 +288,10 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
       for (size_t pos = path.find(":"); pos != string::npos; pos = path.find(":", pos + 1))
         path.replace(pos, 1, ";");
       path.insert(0, "PATH=");
-      path += ";"; path += getenv("PATH");
+      path += ";";
+      const char* system_path = getenv("PATH");
+      if (system_path)
+        path += system_path;
       const char *eCenviron[2] = { path.c_str(), NULL };
       return e_exec(cmd, eCenviron);
     }
@@ -364,8 +394,14 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
     void path_coerce(string &ename)
     {
       char* a = getenv("PATH");
+      if (!a)
+        return;
+     
       size_t len = strlen(a) + 1;
       char* b = (char*)malloc(len);
+      if (!b)
+        return;
+      
       memcpy(b,a,len);
       a = b;
 
@@ -401,6 +437,9 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
 
       string redirout, redirerr; int argc = 0, argcmax = 16;
       char* *argv = (char**)malloc(sizeof(char*) * (argcmax+1));
+      if (!argv)
+        return -1;
+
       argv[0] = (char*)ename.c_str(); argc = 1;
 
       while (fcmd[pos])
@@ -429,8 +468,16 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
           if (argc >= argcmax)
           {
             argcmax += 16;
-            if (!(argv = (char**)realloc(argv, sizeof(char*) * (argcmax+1))))
-              return 0;
+            char **new_argv = (char**)realloc(
+                argv, sizeof(char*) * (argcmax + 1));
+            if (!new_argv)
+            {
+              for (char **i = argv + 1; *i; ++i)
+                free(*i);
+              free(argv);
+              return -1;
+            }
+            argv = new_argv;
           }
           argv[argc++] = np;
         }
@@ -446,6 +493,15 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
 
       int result = -1;
       pid_t fk = fork();
+
+      if (fk < 0)
+      {
+        for (char** i = argv + 1; *i; ++i)
+          free(*i);
+        free(argv);
+        return -1;
+      }
+      
       if (build_enable_stop)
         setpgid(0,0); // << new process group
 
@@ -467,7 +523,10 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
         else {
           close(STDOUT_FILENO);
           int filedes = creat(redirout.c_str(),laxpermissions);
-          if (dup(filedes) == -1) {}
+          if (filedes < 0)
+            _exit(127);
+          if (dup(filedes) == -1)
+            _exit(127);
           if (redirerr == redirout)
             dup2(1,2);
         }
@@ -499,7 +558,7 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
         else usenviron = environ;
 
         execve(ename.c_str(), (char*const*)argv, (char*const*)usenviron);
-        exit(-1);
+        _exit(127);
       }
 
       while (!waitpid(fk,&result,build_enable_stop?WNOHANG:0)) {
@@ -516,7 +575,12 @@ void myReplace(std::string& str, const std::string& oldStr, const std::string& n
       for (char** i = argv+1; *i; i++)
         free(*i);
       free(argv);
-      return WEXITSTATUS(result);
+
+      if (WIFEXITED(result))
+        return WEXITSTATUS(result);
+      if (WIFSIGNALED(result))
+        return 128 + WTERMSIG(result);
+      return -1;
     }
 
     int e_execp(const char* cmd, string path)
