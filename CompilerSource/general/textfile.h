@@ -25,6 +25,8 @@
 **                                                                              **
 \********************************************************************************/
 
+#include <string>
+using std::string;
 
 int file_text_open_read(string filename);
 int file_text_open_write(string filename);
